@@ -38,6 +38,11 @@ func TestMain(m *testing.M) {
 		log.Fatalf("Failed to truncate outbox table: %s", err)
 	}
 
+	_, err = db.Exec("TRUNCATE TABLE Entity")
+	if err != nil {
+		log.Fatalf("Failed to truncate entity table: %s", err)
+	}
+
 	os.Exit(m.Run())
 }
 
@@ -52,50 +57,29 @@ func TestWriterSuccessfullyWritesToOutbox(t *testing.T) {
 		require.NoError(t, err)
 		return nil
 	})
-
 	require.NoError(t, err)
 
-	var count int
-	err = db.QueryRow("SELECT COUNT(*) FROM Outbox").Scan(&count)
-	require.NoError(t, err)
-	require.Equal(t, 1, count)
+	savedMessage, found := readOutboxMessage(t, anyMsg.ID)
+	require.True(t, found)
 
-	var savedMessage outbox.Message
-	var savedEntity entity
+	savedEntity, found := readEntity(t, anyEntity.ID)
+	require.True(t, found)
 
-	err = db.QueryRow("SELECT id, created_at, context, payload FROM Outbox WHERE id = $1", anyMsg.ID).Scan(
-		&savedMessage.ID, &savedMessage.CreatedAt, &savedMessage.Context, &savedMessage.Payload,
-	)
-	require.NoError(t, err)
-
-	err = db.QueryRow("SELECT id, created_at FROM Entity WHERE id = $1", anyEntity.ID).Scan(
-		&savedEntity.ID, &savedEntity.CreatedAt,
-	)
-	require.NoError(t, err)
-
-	assertEntityEqual(t, anyEntity, savedEntity)
-	assertMessageEqual(t, anyMsg, savedMessage)
+	assertEntityEqual(t, anyEntity, *savedEntity)
+	assertMessageEqual(t, anyMsg, *savedMessage)
 }
 
-type failingTxProvider struct {
-	tx *sql.Tx
-}
-
-func (f *failingTxProvider) Begin() (*sql.Tx, error) {
-	return f.tx, errors.New("any error in callback")
-}
-
-func TestWriterRollsBackOnCallbackError(t *testing.T) {
+func TestWriterRollsBackOnOutboxWriteError(t *testing.T) {
 	w := outbox.NewWriter(db)
 
+	// Write a message to the outbox
 	anyMsg := createMessageFixture()
-	anyEntity := createEntityFixture()
-
 	err := w.Write(context.Background(), anyMsg, func(ctx context.Context, tx *sql.Tx) error {
 		return nil
 	})
 	require.NoError(t, err)
 
+	anyEntity := createEntityFixture()
 	err = w.Write(context.Background(), anyMsg, func(ctx context.Context, tx *sql.Tx) error {
 		_, err := tx.Exec("INSERT INTO Entity (id, created_at) VALUES ($1, $2)", anyEntity.ID, anyEntity.CreatedAt)
 		require.NoError(t, err)
@@ -106,13 +90,11 @@ func TestWriterRollsBackOnCallbackError(t *testing.T) {
 	require.ErrorAs(t, err, &pqError)
 	require.Equal(t, pq.ErrorCode("23505"), pqError.Code)
 
-	var count int
-	err = db.QueryRow("SELECT COUNT(*) FROM Entity WHERE id = $1", anyEntity.ID).Scan(&count)
-	require.NoError(t, err)
-	require.Equal(t, 0, count)
+	_, found := readEntity(t, anyEntity.ID)
+	require.False(t, found)
 }
 
-func TestWriterRollsBackOnOutboxWriteError(t *testing.T) {
+func TestWriterRollsBackOnCallbackError(t *testing.T) {
 	w := outbox.NewWriter(db)
 
 	anyMsg := createMessageFixture()
@@ -123,11 +105,34 @@ func TestWriterRollsBackOnOutboxWriteError(t *testing.T) {
 
 	require.Error(t, err)
 
-	var count int
-	err = db.QueryRow("SELECT COUNT(*) FROM Outbox").Scan(&count)
-	require.NoError(t, err)
-	require.Equal(t, 0, count)
+	_, found := readOutboxMessage(t, anyMsg.ID)
+	require.False(t, found)
 }
+
+func readOutboxMessage(t *testing.T, id uuid.UUID) (*outbox.Message, bool) {
+	var msg outbox.Message
+	err := db.QueryRow("SELECT id, created_at, context, payload FROM Outbox WHERE id = $1", id).Scan(
+		&msg.ID, &msg.CreatedAt, &msg.Context, &msg.Payload,
+	)
+	if err == sql.ErrNoRows {
+		return nil, false
+	}
+	require.NoError(t, err)
+	return &msg, true
+}
+
+func readEntity(t *testing.T, id uuid.UUID) (*entity, bool) {
+	var e entity
+	err := db.QueryRow("SELECT id, created_at FROM Entity WHERE id = $1", id).Scan(
+		&e.ID, &e.CreatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, false
+	}
+	require.NoError(t, err)
+	return &e, true
+}
+
 func createMessageFixture() outbox.Message {
 	msgID := uuid.New()
 	msgContext := []byte("{}")
