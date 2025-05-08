@@ -18,7 +18,7 @@ type fakeTx struct {
 	rolledBack bool
 }
 
-func (f *fakeTx) ExecContext(ctx context.Context, query string, args ...any) error {
+func (f *fakeTx) ExecContext(_ context.Context, _ string, _ ...any) error {
 	f.execCalled = true
 	return f.execErr
 }
@@ -49,15 +49,18 @@ func TestWriterSucceed(t *testing.T) {
 	txProvider := &fakeTxProvider{tx: &fakeTx{}}
 	writer := &Writer{txProvider: txProvider}
 
+	var callbackCalled bool
 	err := writer.Write(context.Background(), Message{}, func(ctx context.Context, tx Tx) error {
+		callbackCalled = true
 		return nil
 	})
 
 	require.NoError(t, err)
 
+	require.True(t, callbackCalled)
 	require.True(t, txProvider.tx.execCalled)
-	require.True(t, txProvider.tx.committed)
 	require.False(t, txProvider.tx.rolledBack)
+	require.True(t, txProvider.tx.committed)
 }
 
 func TestWriterErrorOnTxBegin(t *testing.T) {
@@ -81,13 +84,16 @@ func TestWriterErrorOnTxCommit(t *testing.T) {
 	txProvider := &fakeTxProvider{tx: &fakeTx{commitErr: errors.New("failed to commit transaction")}}
 	writer := &Writer{txProvider: txProvider}
 
+	var callbackCalled bool
 	err := writer.Write(context.Background(), Message{}, func(ctx context.Context, tx Tx) error {
+		callbackCalled = true
 		return nil
 	})
 
 	require.Error(t, err)
 	require.Equal(t, txProvider.tx.commitErr, err)
 
+	require.True(t, callbackCalled)
 	require.True(t, txProvider.tx.execCalled)
 	require.True(t, txProvider.tx.rolledBack)
 }
