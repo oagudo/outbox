@@ -1,4 +1,4 @@
-module go-outbox
+module github.com/oagudo/go-outbox
 
 go 1.22.2
 
