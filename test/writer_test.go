@@ -12,7 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	_ "github.com/lib/pq"
-	"github.com/oagudo/go-outbox/pkg/outbox"
+	"github.com/oagudo/outbox/pkg/outbox"
 	"github.com/stretchr/testify/require"
 )
 
