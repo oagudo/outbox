@@ -52,8 +52,8 @@ func TestWriterSuccessfullyWritesToOutbox(t *testing.T) {
 	anyMsg := createMessageFixture()
 	anyEntity := createEntityFixture()
 
-	err := w.Write(context.Background(), anyMsg, func(ctx context.Context, tx *sql.Tx) error {
-		_, err := tx.Exec("INSERT INTO Entity (id, created_at) VALUES ($1, $2)", anyEntity.ID, anyEntity.CreatedAt)
+	err := w.Write(context.Background(), anyMsg, func(ctx context.Context, tx outbox.Tx) error {
+		err := tx.ExecContext(ctx, "INSERT INTO Entity (id, created_at) VALUES ($1, $2)", anyEntity.ID, anyEntity.CreatedAt)
 		require.NoError(t, err)
 		return nil
 	})
@@ -74,14 +74,14 @@ func TestWriterRollsBackOnOutboxWriteError(t *testing.T) {
 
 	// Write a message to the outbox
 	anyMsg := createMessageFixture()
-	err := w.Write(context.Background(), anyMsg, func(ctx context.Context, tx *sql.Tx) error {
+	err := w.Write(context.Background(), anyMsg, func(ctx context.Context, tx outbox.Tx) error {
 		return nil
 	})
 	require.NoError(t, err)
 
 	anyEntity := createEntityFixture()
-	err = w.Write(context.Background(), anyMsg, func(ctx context.Context, tx *sql.Tx) error {
-		_, err := tx.Exec("INSERT INTO Entity (id, created_at) VALUES ($1, $2)", anyEntity.ID, anyEntity.CreatedAt)
+	err = w.Write(context.Background(), anyMsg, func(ctx context.Context, tx outbox.Tx) error {
+		err := tx.ExecContext(ctx, "INSERT INTO Entity (id, created_at) VALUES ($1, $2)", anyEntity.ID, anyEntity.CreatedAt)
 		require.NoError(t, err)
 		return nil
 	})
@@ -99,7 +99,7 @@ func TestWriterRollsBackOnCallbackError(t *testing.T) {
 
 	anyMsg := createMessageFixture()
 
-	err := w.Write(context.Background(), anyMsg, func(ctx context.Context, tx *sql.Tx) error {
+	err := w.Write(context.Background(), anyMsg, func(ctx context.Context, tx outbox.Tx) error {
 		return errors.New("any error in callback")
 	})
 

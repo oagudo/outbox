@@ -5,8 +5,14 @@ import (
 	"database/sql"
 )
 
+type Tx interface {
+	ExecContext(ctx context.Context, query string, args ...any) error
+	Commit() error
+	Rollback() error
+}
+
 type TxProvider interface {
-	Begin() (*sql.Tx, error)
+	Begin() (Tx, error)
 }
 
 type MessagePublisher interface {
@@ -18,7 +24,7 @@ type Writer struct {
 	msgPublisher MessagePublisher
 }
 
-type WriterCallback func(ctx context.Context, tx *sql.Tx) error
+type WriterCallback func(ctx context.Context, tx Tx) error
 
 type WriterOption func(*Writer)
 
@@ -28,9 +34,9 @@ func WithOptimisticPublisher(msgPublisher MessagePublisher) WriterOption {
 	}
 }
 
-func NewWriter(txProvider TxProvider, opts ...WriterOption) *Writer {
+func NewWriter(db *sql.DB, opts ...WriterOption) *Writer {
 	w := &Writer{
-		txProvider: txProvider,
+		txProvider: &sqlAdapter{db},
 	}
 
 	for _, opt := range opts {
@@ -58,7 +64,7 @@ func (w *Writer) Write(ctx context.Context, msg Message, cb WriterCallback) erro
 		return err
 	}
 
-	_, err = tx.ExecContext(ctx, "INSERT INTO Outbox (id, created_at, context, payload) VALUES ($1, $2, $3, $4)",
+	err = tx.ExecContext(ctx, "INSERT INTO Outbox (id, created_at, context, payload) VALUES ($1, $2, $3, $4)",
 		msg.ID, msg.CreatedAt, msg.Context, msg.Payload)
 	if err != nil {
 		return err
