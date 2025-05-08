@@ -67,10 +67,18 @@ func (w *Writer) Write(ctx context.Context, msg Message, cb WriterCallback) erro
 	err = tx.Commit()
 	txCommitted = err == nil
 
-	if txCommitted && w.msgPublisher != nil {
-		ctxWithoutCancel := context.WithoutCancel(ctx)
-		go w.msgPublisher.Publish(ctxWithoutCancel, msg) // optimistically publish the message
+	if txCommitted {
+		go w.publishMessage(ctx, msg) // optimistically publish the message
 	}
 
-	return nil
+	return err
+}
+
+func (w *Writer) publishMessage(ctx context.Context, msg Message) {
+	if w.msgPublisher == nil {
+		return
+	}
+
+	ctxWithoutCancel := context.WithoutCancel(ctx)
+	w.msgPublisher.Publish(ctxWithoutCancel, msg)
 }
