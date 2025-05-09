@@ -1,23 +1,34 @@
 package outbox
 
 import (
+	"context"
 	"database/sql"
 	"sync/atomic"
 	"time"
-
-	coreSql "github.com/oagudo/outbox/internal/sql"
 )
 
+const (
+	defaultInterval    = 10 * time.Second
+	defaultMaxMessages = 100
+)
+
+type OnReadErrorCallback func(error)
+
+type OnMessageErrorCallback func(Message, error)
+
 type Reader struct {
-	sqlExecutor  coreSql.SqlExecutor
+	db           *sql.DB
 	msgPublisher MessagePublisher
+
+	onDeleteErrorCallback  OnMessageErrorCallback
+	onPublishErrorCallback OnMessageErrorCallback
+	onReadErrorCallback    OnReadErrorCallback
 
 	interval    time.Duration
 	maxMessages int
-
-	started int32
-	closed  int32
-	stop    chan struct{}
+	started     int32
+	closed      int32
+	stop        chan struct{}
 }
 
 type ReaderOption func(*Reader)
@@ -34,11 +45,40 @@ func WithMaxMessages(maxMessages int) ReaderOption {
 	}
 }
 
+func WithOnDeleteError(callback OnMessageErrorCallback) ReaderOption {
+	return func(r *Reader) {
+		r.onDeleteErrorCallback = callback
+	}
+}
+
+func WithOnPublishError(callback OnMessageErrorCallback) ReaderOption {
+	return func(r *Reader) {
+		r.onPublishErrorCallback = callback
+	}
+}
+
+func WithOnReadError(callback OnReadErrorCallback) ReaderOption {
+	return func(r *Reader) {
+		r.onReadErrorCallback = callback
+	}
+}
+
+func noOpMessageErrorCallback(Message, error) {}
+func noOpReadErrorCallback(error)             {}
+
 func NewReader(db *sql.DB, msgPublisher MessagePublisher, opts ...ReaderOption) *Reader {
+
 	r := &Reader{
-		sqlExecutor:  &coreSql.SqlAdapter{DB: db},
+		db:           db,
 		msgPublisher: msgPublisher,
 		stop:         make(chan struct{}),
+
+		interval:    defaultInterval,
+		maxMessages: defaultMaxMessages,
+
+		onDeleteErrorCallback:  noOpMessageErrorCallback,
+		onPublishErrorCallback: noOpMessageErrorCallback,
+		onReadErrorCallback:    noOpReadErrorCallback,
 	}
 
 	for _, opt := range opts {
@@ -77,5 +117,50 @@ func (r *Reader) Stop() {
 }
 
 func (r *Reader) publishMessages() {
+	msgs, err := readOutboxMessages(r.db, r.maxMessages)
+	if err != nil {
+		r.onReadErrorCallback(err)
+		return
+	}
 
+	for _, msg := range msgs {
+		err := r.msgPublisher.Publish(context.Background(), msg)
+		if err != nil {
+			r.onPublishErrorCallback(msg, err)
+			continue
+		}
+
+		_, err = r.db.Exec(`
+			DELETE FROM Outbox
+			WHERE id = $1
+		`, msg.ID)
+		if err != nil {
+			r.onDeleteErrorCallback(msg, err)
+		}
+	}
+}
+
+func readOutboxMessages(db *sql.DB, limit int) ([]Message, error) {
+	rows, err := db.Query(`
+        SELECT id, payload, created_at
+        FROM Outbox
+        ORDER BY created_at ASC
+        LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var messages []Message
+	for rows.Next() {
+		var msg Message
+		if err := rows.Scan(&msg.ID, &msg.Payload, &msg.CreatedAt); err != nil {
+			return nil, err
+		}
+		messages = append(messages, msg)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return messages, nil
 }

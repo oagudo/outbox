@@ -12,7 +12,7 @@ type QueryExecutor interface {
 }
 
 type MessagePublisher interface {
-	Publish(ctx context.Context, msg Message) error
+	Publish(ctx context.Context, msg Message) error // TODO: Check if context is needed
 }
 
 type Writer struct {

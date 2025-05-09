@@ -10,7 +10,6 @@ import (
 )
 
 func TestReaderSuccessfullyPublishesMessage(t *testing.T) {
-	t.Skip()
 
 	r := outbox.NewReader(db, &fakePublisher{}, outbox.WithInterval(10*time.Millisecond))
 	r.Start()
@@ -26,6 +25,6 @@ func TestReaderSuccessfullyPublishesMessage(t *testing.T) {
 	require.Eventually(t, func() bool {
 		_, found := readOutboxMessage(t, anyMsg.ID)
 		return !found
-	}, time.Second, 50*time.Millisecond)
+	}, 1*time.Second, 50*time.Millisecond)
 	r.Stop()
 }
