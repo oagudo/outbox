@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	coreSql "github.com/oagudo/outbox/internal/sql"
 )
 
 type fakeTx struct {
@@ -38,7 +40,7 @@ type fakeTxProvider struct {
 	tx       *fakeTx
 }
 
-func (f *fakeTxProvider) BeginTx() (Tx, error) {
+func (f *fakeTxProvider) BeginTx() (coreSql.Tx, error) {
 	if f.beginErr != nil {
 		return nil, f.beginErr
 	}
@@ -54,7 +56,7 @@ func TestWriterSucceed(t *testing.T) {
 	writer := &Writer{sqlExecutor: txProvider}
 
 	var callbackCalled bool
-	err := writer.Write(context.Background(), Message{}, func(ctx context.Context, tx Tx) error {
+	err := writer.Write(context.Background(), Message{}, func(ctx context.Context, executor QueryExecutor) error {
 		callbackCalled = true
 		return nil
 	})
@@ -71,7 +73,7 @@ func TestWriterErrorOnTxBegin(t *testing.T) {
 	txProvider := &fakeTxProvider{beginErr: errors.New("failed to begin transaction"), tx: &fakeTx{}}
 	writer := &Writer{sqlExecutor: txProvider}
 
-	err := writer.Write(context.Background(), Message{}, func(ctx context.Context, tx Tx) error {
+	err := writer.Write(context.Background(), Message{}, func(ctx context.Context, executor QueryExecutor) error {
 		require.Fail(t, "should not be called")
 		return nil
 	})
@@ -89,7 +91,7 @@ func TestWriterErrorOnTxCommit(t *testing.T) {
 	writer := &Writer{sqlExecutor: txProvider}
 
 	var callbackCalled bool
-	err := writer.Write(context.Background(), Message{}, func(ctx context.Context, tx Tx) error {
+	err := writer.Write(context.Background(), Message{}, func(ctx context.Context, executor QueryExecutor) error {
 		callbackCalled = true
 		return nil
 	})

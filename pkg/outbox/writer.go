@@ -3,16 +3,11 @@ package outbox
 import (
 	"context"
 	"database/sql"
+
+	coreSql "github.com/oagudo/outbox/internal/sql"
 )
 
-type Tx interface {
-	ExecContext(ctx context.Context, query string, args ...any) error
-	Commit() error
-	Rollback() error
-}
-
-type SqlExecutor interface {
-	BeginTx() (Tx, error)
+type QueryExecutor interface {
 	ExecContext(ctx context.Context, query string, args ...any) error
 }
 
@@ -21,11 +16,11 @@ type MessagePublisher interface {
 }
 
 type Writer struct {
-	sqlExecutor  SqlExecutor
+	sqlExecutor  coreSql.SqlExecutor
 	msgPublisher MessagePublisher
 }
 
-type WriterCallback func(ctx context.Context, tx Tx) error
+type WriterCallback func(ctx context.Context, tx QueryExecutor) error
 
 type WriterOption func(*Writer)
 
@@ -37,7 +32,7 @@ func WithOptimisticPublisher(msgPublisher MessagePublisher) WriterOption {
 
 func NewWriter(db *sql.DB, opts ...WriterOption) *Writer {
 	w := &Writer{
-		sqlExecutor: &sqlAdapter{db},
+		sqlExecutor: &coreSql.SqlAdapter{DB: db},
 	}
 
 	for _, opt := range opts {
@@ -47,7 +42,7 @@ func NewWriter(db *sql.DB, opts ...WriterOption) *Writer {
 	return w
 }
 
-func (w *Writer) Write(ctx context.Context, msg Message, cb WriterCallback) error {
+func (w *Writer) Write(ctx context.Context, msg Message, callback WriterCallback) error {
 	tx, err := w.sqlExecutor.BeginTx()
 	if err != nil {
 		return err
@@ -60,7 +55,7 @@ func (w *Writer) Write(ctx context.Context, msg Message, cb WriterCallback) erro
 		}
 	}()
 
-	err = cb(ctx, tx)
+	err = callback(ctx, tx)
 	if err != nil {
 		return err
 	}
