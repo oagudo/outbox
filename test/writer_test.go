@@ -13,10 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var (
-	db *sql.DB
-)
-
 type entity struct {
 	ID        uuid.UUID
 	CreatedAt time.Time

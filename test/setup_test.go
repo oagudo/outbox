@@ -9,6 +9,10 @@ import (
 	_ "github.com/lib/pq"
 )
 
+var (
+	db *sql.DB
+)
+
 func TestMain(m *testing.M) {
 	var err error
 	db, err = sql.Open("postgres", "postgres://postgres:postgres@localhost:5432/outbox?sslmode=disable")
