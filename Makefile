@@ -1,19 +1,20 @@
-.PHONY: tests start-docker-compose stop-docker-compose
+.PHONY: tests start stop
 
-start-docker-compose:
+start:
 	@echo "Starting test dependencies with Docker Compose..."
-	cd test && docker-compose up -d
+	cd test && docker compose up -d
 	@echo "Waiting for PostgreSQL to be healthy..."
 	@until docker exec outbox_postgres pg_isready -U postgres; do \
+		echo "PostgreSQL is not ready yet - sleeping for 1 second..."; \
 		sleep 1; \
 	done
 	@echo "PostgreSQL is ready."
 
-stop-docker-compose:
+stop:
 	@echo "Stopping Docker resources..."
-	cd test && docker-compose down
+	cd test && docker compose down
 
-tests: start-docker-compose
+tests: start
 	@echo "Running tests..."
 	go test -v ./test/...
 	@echo "Tests complete." 
