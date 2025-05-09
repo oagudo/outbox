@@ -38,16 +38,20 @@ type fakeTxProvider struct {
 	tx       *fakeTx
 }
 
-func (f *fakeTxProvider) Begin() (Tx, error) {
+func (f *fakeTxProvider) BeginTx() (Tx, error) {
 	if f.beginErr != nil {
 		return nil, f.beginErr
 	}
 	return f.tx, nil
 }
 
+func (f *fakeTxProvider) ExecContext(_ context.Context, _ string, _ ...any) error {
+	return nil
+}
+
 func TestWriterSucceed(t *testing.T) {
 	txProvider := &fakeTxProvider{tx: &fakeTx{}}
-	writer := &Writer{txProvider: txProvider}
+	writer := &Writer{sqlExecutor: txProvider}
 
 	var callbackCalled bool
 	err := writer.Write(context.Background(), Message{}, func(ctx context.Context, tx Tx) error {
@@ -65,7 +69,7 @@ func TestWriterSucceed(t *testing.T) {
 
 func TestWriterErrorOnTxBegin(t *testing.T) {
 	txProvider := &fakeTxProvider{beginErr: errors.New("failed to begin transaction"), tx: &fakeTx{}}
-	writer := &Writer{txProvider: txProvider}
+	writer := &Writer{sqlExecutor: txProvider}
 
 	err := writer.Write(context.Background(), Message{}, func(ctx context.Context, tx Tx) error {
 		require.Fail(t, "should not be called")
@@ -82,7 +86,7 @@ func TestWriterErrorOnTxBegin(t *testing.T) {
 
 func TestWriterErrorOnTxCommit(t *testing.T) {
 	txProvider := &fakeTxProvider{tx: &fakeTx{commitErr: errors.New("failed to commit transaction")}}
-	writer := &Writer{txProvider: txProvider}
+	writer := &Writer{sqlExecutor: txProvider}
 
 	var callbackCalled bool
 	err := writer.Write(context.Background(), Message{}, func(ctx context.Context, tx Tx) error {

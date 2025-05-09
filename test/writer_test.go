@@ -85,6 +85,53 @@ func TestWriterRollsBackOnCallbackError(t *testing.T) {
 	require.False(t, found)
 }
 
+type fakePublisher struct {
+	publishErr error
+	published  bool
+}
+
+func (p *fakePublisher) Publish(ctx context.Context, msg outbox.Message) error {
+	p.published = true
+	return p.publishErr
+}
+
+func TestWriterWithOptimisticPublisher(t *testing.T) {
+
+	t.Run("publishes message and removes it from outbox if callback succeeds", func(t *testing.T) {
+		publisher := &fakePublisher{}
+		w := outbox.NewWriter(db, outbox.WithOptimisticPublisher(publisher))
+
+		anyMsg := createMessageFixture()
+		err := w.Write(context.Background(), anyMsg, func(ctx context.Context, tx outbox.Tx) error {
+			return nil
+		})
+		require.NoError(t, err)
+
+		require.Eventually(t, func() bool {
+			_, found := readOutboxMessage(t, anyMsg.ID)
+			return publisher.published && !found
+		}, time.Second, 50*time.Millisecond)
+	})
+
+	t.Run("does remove message from outbox if publisher returns an error", func(t *testing.T) {
+		publisher := &fakePublisher{publishErr: errors.New("any publisher error")}
+		w := outbox.NewWriter(db, outbox.WithOptimisticPublisher(publisher))
+
+		anyMsg := createMessageFixture()
+		err := w.Write(context.Background(), anyMsg, func(ctx context.Context, tx outbox.Tx) error {
+			return nil
+		})
+		require.NoError(t, err)
+
+		require.Eventually(t, func() bool {
+			return publisher.published
+		}, time.Second, 50*time.Millisecond)
+
+		_, found := readOutboxMessage(t, anyMsg.ID)
+		require.True(t, found)
+	})
+}
+
 func readOutboxMessage(t *testing.T, id uuid.UUID) (*outbox.Message, bool) {
 	var msg outbox.Message
 	err := db.QueryRow("SELECT id, created_at, context, payload FROM Outbox WHERE id = $1", id).Scan(

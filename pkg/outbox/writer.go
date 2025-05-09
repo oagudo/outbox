@@ -11,8 +11,9 @@ type Tx interface {
 	Rollback() error
 }
 
-type TxProvider interface {
-	Begin() (Tx, error)
+type SqlExecutor interface {
+	BeginTx() (Tx, error)
+	ExecContext(ctx context.Context, query string, args ...any) error
 }
 
 type MessagePublisher interface {
@@ -20,7 +21,7 @@ type MessagePublisher interface {
 }
 
 type Writer struct {
-	txProvider   TxProvider
+	sqlExecutor  SqlExecutor
 	msgPublisher MessagePublisher
 }
 
@@ -36,7 +37,7 @@ func WithOptimisticPublisher(msgPublisher MessagePublisher) WriterOption {
 
 func NewWriter(db *sql.DB, opts ...WriterOption) *Writer {
 	w := &Writer{
-		txProvider: &sqlAdapter{db},
+		sqlExecutor: &sqlAdapter{db},
 	}
 
 	for _, opt := range opts {
@@ -47,7 +48,7 @@ func NewWriter(db *sql.DB, opts ...WriterOption) *Writer {
 }
 
 func (w *Writer) Write(ctx context.Context, msg Message, cb WriterCallback) error {
-	tx, err := w.txProvider.Begin()
+	tx, err := w.sqlExecutor.BeginTx()
 	if err != nil {
 		return err
 	}
@@ -74,7 +75,8 @@ func (w *Writer) Write(ctx context.Context, msg Message, cb WriterCallback) erro
 	txCommitted = err == nil
 
 	if txCommitted {
-		go w.publishMessage(ctx, msg) // optimistically publish the message
+		ctxWithoutCancel := context.WithoutCancel(ctx)
+		go w.publishMessage(ctxWithoutCancel, msg) // optimistically publish the message
 	}
 
 	return err
@@ -85,6 +87,8 @@ func (w *Writer) publishMessage(ctx context.Context, msg Message) {
 		return
 	}
 
-	ctxWithoutCancel := context.WithoutCancel(ctx)
-	w.msgPublisher.Publish(ctxWithoutCancel, msg)
+	err := w.msgPublisher.Publish(ctx, msg)
+	if err == nil {
+		_ = w.sqlExecutor.ExecContext(ctx, "DELETE FROM Outbox WHERE id = $1", msg.ID)
+	}
 }

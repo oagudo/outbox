@@ -14,7 +14,7 @@ stop:
 	@echo "Stopping Docker resources..."
 	cd test && docker compose down
 
-tests: start
+test: start
 	@echo "Running tests..."
-	go test -v ./test/...
+	go test -v ./...
 	@echo "Tests complete." 

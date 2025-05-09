@@ -26,10 +26,15 @@ type sqlAdapter struct {
 	db *sql.DB
 }
 
-func (a *sqlAdapter) Begin() (Tx, error) {
+func (a *sqlAdapter) BeginTx() (Tx, error) {
 	tx, err := a.db.Begin()
 	if err != nil {
 		return nil, err
 	}
 	return &sqlTxAdapter{tx}, nil
+}
+
+func (a *sqlAdapter) ExecContext(ctx context.Context, query string, args ...any) error {
+	_, err := a.db.ExecContext(ctx, query, args...)
+	return err
 }

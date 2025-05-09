@@ -28,4 +28,4 @@ jobs:
       uses: docker/setup-buildx-action@v3
 
     - name: Test
-      run: make tests
+      run: make test
