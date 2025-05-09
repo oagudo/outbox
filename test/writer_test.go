@@ -84,10 +84,14 @@ func TestWriterRollsBackOnCallbackError(t *testing.T) {
 type fakePublisher struct {
 	publishErr error
 	published  bool
+	onPublish  func(outbox.Message)
 }
 
 func (p *fakePublisher) Publish(ctx context.Context, msg outbox.Message) error {
 	p.published = true
+	if p.onPublish != nil {
+		p.onPublish(msg)
+	}
 	return p.publishErr
 }
 
