@@ -4,9 +4,6 @@ run:
   timeout: 5m
   go: "1.22.2"  # Adjust this to your project's Go version
   tests: true
-  skip-dirs:
-    - vendor
-    - examples
 
 linters:
   enable:
@@ -31,38 +28,9 @@ linters:
     - thelper
     - tparallel
 
-linters-settings:
-  gocyclo:
-    min-complexity: 15
-  govet:
-    check-shadowing: true
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - style
-      - performance
-  misspell:
-    locale: US
-
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - gosec
-        - dupl
-    - path: _test\.go
-      text: "shadow"
-      linters:
-        - govet
-  exclude-use-default: false
-  exclude-case-sensitive: false
-
-output:
-  format: colored-line-number
-  print-issued-lines: true
-  print-linter-name: true
 
 formatters:
   enable:
