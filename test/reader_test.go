@@ -10,7 +10,7 @@ import (
 )
 
 func TestReaderSuccessfullyPublishesMessage(t *testing.T) {
-	truncateOutboxTable()
+	_ = truncateOutboxTable()
 
 	r := outbox.NewReader(db, &fakePublisher{}, outbox.WithInterval(10*time.Millisecond))
 	r.Start()
@@ -31,7 +31,7 @@ func TestReaderSuccessfullyPublishesMessage(t *testing.T) {
 }
 
 func TestReaderPublishesMessagesInOrder(t *testing.T) {
-	truncateOutboxTable()
+	_ = truncateOutboxTable()
 
 	firstMsg := createMessageFixture()
 
@@ -74,7 +74,7 @@ func TestReaderPublishesMessagesInOrder(t *testing.T) {
 }
 
 func TestReaderOnReadError(t *testing.T) {
-	truncateOutboxTable()
+	_ = truncateOutboxTable()
 
 	t.Cleanup(func() {
 		_, err := db.Exec("ALTER TABLE Outbox_old RENAME TO Outbox")
@@ -98,7 +98,8 @@ func TestReaderOnReadError(t *testing.T) {
 }
 
 func TestReaderOnDeleteError(t *testing.T) {
-	truncateOutboxTable()
+	_ = truncateOutboxTable()
+
 	t.Cleanup(func() {
 		_, err := db.Exec("ALTER TABLE Outbox_old RENAME TO Outbox")
 		require.NoError(t, err)
@@ -106,11 +107,11 @@ func TestReaderOnDeleteError(t *testing.T) {
 
 	onDeleteCallbackCalled := false
 	r := outbox.NewReader(db, &fakePublisher{
-		onPublish: func(msg outbox.Message) {
+		onPublish: func(_ outbox.Message) {
 			_, err := db.Exec("ALTER TABLE Outbox RENAME TO Outbox_old") // force an error on delete
 			require.NoError(t, err)
 		},
-	}, outbox.WithInterval(10*time.Millisecond), outbox.WithOnDeleteError(func(msg outbox.Message, err error) {
+	}, outbox.WithInterval(10*time.Millisecond), outbox.WithOnDeleteError(func(_ outbox.Message, err error) {
 		require.Error(t, err)
 		onDeleteCallbackCalled = true
 	}))
@@ -127,5 +128,4 @@ func TestReaderOnDeleteError(t *testing.T) {
 		return onDeleteCallbackCalled
 	}, 1*time.Second, 50*time.Millisecond)
 	r.Stop()
-
 }

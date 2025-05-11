@@ -16,7 +16,7 @@ type MessagePublisher interface {
 }
 
 type Writer struct {
-	sqlExecutor  coreSql.SqlExecutor
+	sqlExecutor  coreSql.Executor
 	msgPublisher MessagePublisher
 }
 
@@ -32,7 +32,7 @@ func WithOptimisticPublisher(msgPublisher MessagePublisher) WriterOption {
 
 func NewWriter(db *sql.DB, opts ...WriterOption) *Writer {
 	w := &Writer{
-		sqlExecutor: &coreSql.SqlAdapter{DB: db},
+		sqlExecutor: &coreSql.DBAdapter{DB: db},
 	}
 
 	for _, opt := range opts {

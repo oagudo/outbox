@@ -8,7 +8,7 @@ type Tx interface {
 	Rollback() error
 }
 
-type SqlExecutor interface {
+type Executor interface {
 	BeginTx() (Tx, error)
 	ExecContext(ctx context.Context, query string, args ...any) error
 }

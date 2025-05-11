@@ -46,7 +46,7 @@ func TestWriterRollsBackOnOutboxWriteError(t *testing.T) {
 
 	// Write a message to the outbox
 	anyMsg := createMessageFixture()
-	err := w.Write(context.Background(), anyMsg, func(ctx context.Context, executor outbox.QueryExecutor) error {
+	err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.QueryExecutor) error {
 		return nil
 	})
 	require.NoError(t, err)
@@ -71,7 +71,7 @@ func TestWriterRollsBackOnCallbackError(t *testing.T) {
 
 	anyMsg := createMessageFixture()
 
-	err := w.Write(context.Background(), anyMsg, func(ctx context.Context, executor outbox.QueryExecutor) error {
+	err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.QueryExecutor) error {
 		return errors.New("any error in callback")
 	})
 
@@ -87,7 +87,7 @@ type fakePublisher struct {
 	onPublish  func(outbox.Message)
 }
 
-func (p *fakePublisher) Publish(ctx context.Context, msg outbox.Message) error {
+func (p *fakePublisher) Publish(_ context.Context, msg outbox.Message) error {
 	p.published = true
 	if p.onPublish != nil {
 		p.onPublish(msg)
@@ -96,13 +96,12 @@ func (p *fakePublisher) Publish(ctx context.Context, msg outbox.Message) error {
 }
 
 func TestWriterWithOptimisticPublisher(t *testing.T) {
-
 	t.Run("publishes message and removes it from outbox if callback succeeds", func(t *testing.T) {
 		publisher := &fakePublisher{}
 		w := outbox.NewWriter(db, outbox.WithOptimisticPublisher(publisher))
 
 		anyMsg := createMessageFixture()
-		err := w.Write(context.Background(), anyMsg, func(ctx context.Context, executor outbox.QueryExecutor) error {
+		err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.QueryExecutor) error {
 			return nil
 		})
 		require.NoError(t, err)
@@ -118,7 +117,7 @@ func TestWriterWithOptimisticPublisher(t *testing.T) {
 		w := outbox.NewWriter(db, outbox.WithOptimisticPublisher(publisher))
 
 		anyMsg := createMessageFixture()
-		err := w.Write(context.Background(), anyMsg, func(ctx context.Context, executor outbox.QueryExecutor) error {
+		err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.QueryExecutor) error {
 			return nil
 		})
 		require.NoError(t, err)
@@ -133,6 +132,8 @@ func TestWriterWithOptimisticPublisher(t *testing.T) {
 }
 
 func readOutboxMessage(t *testing.T, id uuid.UUID) (*outbox.Message, bool) {
+	t.Helper()
+
 	var msg outbox.Message
 	err := db.QueryRow("SELECT id, created_at, context, payload FROM Outbox WHERE id = $1", id).Scan(
 		&msg.ID, &msg.CreatedAt, &msg.Context, &msg.Payload,
@@ -145,6 +146,8 @@ func readOutboxMessage(t *testing.T, id uuid.UUID) (*outbox.Message, bool) {
 }
 
 func readEntity(t *testing.T, id uuid.UUID) (*entity, bool) {
+	t.Helper()
+
 	var e entity
 	err := db.QueryRow("SELECT id, created_at FROM Entity WHERE id = $1", id).Scan(
 		&e.ID, &e.CreatedAt,
@@ -181,6 +184,8 @@ func createEntityFixture() entity {
 }
 
 func assertMessageEqual(t *testing.T, expected, actual outbox.Message) {
+	t.Helper()
+
 	require.Equal(t, expected.ID, actual.ID)
 	require.True(t, expected.CreatedAt.Equal(actual.CreatedAt))
 	require.Equal(t, expected.Context, actual.Context)
@@ -188,6 +193,8 @@ func assertMessageEqual(t *testing.T, expected, actual outbox.Message) {
 }
 
 func assertEntityEqual(t *testing.T, expected, actual entity) {
+	t.Helper()
+
 	require.Equal(t, expected.ID, actual.ID)
 	require.True(t, expected.CreatedAt.Equal(actual.CreatedAt))
 }

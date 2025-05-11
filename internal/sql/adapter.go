@@ -5,36 +5,36 @@ import (
 	"database/sql"
 )
 
-type SqlTxAdapter struct {
+type TxAdapter struct {
 	tx *sql.Tx
 }
 
-func (a *SqlTxAdapter) ExecContext(ctx context.Context, query string, args ...any) error {
+func (a *TxAdapter) ExecContext(ctx context.Context, query string, args ...any) error {
 	_, err := a.tx.ExecContext(ctx, query, args...)
 	return err
 }
 
-func (a *SqlTxAdapter) Commit() error {
+func (a *TxAdapter) Commit() error {
 	return a.tx.Commit()
 }
 
-func (a *SqlTxAdapter) Rollback() error {
+func (a *TxAdapter) Rollback() error {
 	return a.tx.Rollback()
 }
 
-type SqlAdapter struct {
+type DBAdapter struct {
 	DB *sql.DB
 }
 
-func (a *SqlAdapter) BeginTx() (Tx, error) {
+func (a *DBAdapter) BeginTx() (Tx, error) {
 	tx, err := a.DB.Begin()
 	if err != nil {
 		return nil, err
 	}
-	return &SqlTxAdapter{tx}, nil
+	return &TxAdapter{tx}, nil
 }
 
-func (a *SqlAdapter) ExecContext(ctx context.Context, query string, args ...any) error {
+func (a *DBAdapter) ExecContext(ctx context.Context, query string, args ...any) error {
 	_, err := a.DB.ExecContext(ctx, query, args...)
 	return err
 }

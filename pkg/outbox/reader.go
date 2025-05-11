@@ -57,10 +57,10 @@ func WithOnReadError(callback OnReadErrorCallback) ReaderOption {
 }
 
 func noOpMessageErrorCallback(Message, error) {}
-func noOpReadErrorCallback(error)             {}
+
+func noOpReadErrorCallback(error) {}
 
 func NewReader(db *sql.DB, msgPublisher MessagePublisher, opts ...ReaderOption) *Reader {
-
 	r := &Reader{
 		db:           db,
 		msgPublisher: msgPublisher,
@@ -140,7 +140,9 @@ func readOutboxMessages(db *sql.DB, limit int) ([]Message, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 
 	var messages []Message
 	for rows.Next() {

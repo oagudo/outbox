@@ -1,4 +1,4 @@
-.PHONY: tests start stop
+.PHONY: tests start stop lint
 
 start:
 	@echo "Starting test dependencies with Docker Compose..."
@@ -17,4 +17,9 @@ stop:
 test: start
 	@echo "Running tests..."
 	go test -v ./...
-	@echo "Tests complete." 
+	@echo "Tests complete."
+
+lint:
+	@echo "Running linters..."
+	golangci-lint run
+	@echo "Linting complete." 

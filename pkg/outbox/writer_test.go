@@ -56,7 +56,7 @@ func TestWriterSucceed(t *testing.T) {
 	writer := &Writer{sqlExecutor: txProvider}
 
 	var callbackCalled bool
-	err := writer.Write(context.Background(), Message{}, func(ctx context.Context, executor QueryExecutor) error {
+	err := writer.Write(context.Background(), Message{}, func(_ context.Context, _ QueryExecutor) error {
 		callbackCalled = true
 		return nil
 	})
@@ -73,7 +73,7 @@ func TestWriterErrorOnTxBegin(t *testing.T) {
 	txProvider := &fakeTxProvider{beginErr: errors.New("failed to begin transaction"), tx: &fakeTx{}}
 	writer := &Writer{sqlExecutor: txProvider}
 
-	err := writer.Write(context.Background(), Message{}, func(ctx context.Context, executor QueryExecutor) error {
+	err := writer.Write(context.Background(), Message{}, func(_ context.Context, _ QueryExecutor) error {
 		require.Fail(t, "should not be called")
 		return nil
 	})
@@ -91,7 +91,7 @@ func TestWriterErrorOnTxCommit(t *testing.T) {
 	writer := &Writer{sqlExecutor: txProvider}
 
 	var callbackCalled bool
-	err := writer.Write(context.Background(), Message{}, func(ctx context.Context, executor QueryExecutor) error {
+	err := writer.Write(context.Background(), Message{}, func(_ context.Context, _ QueryExecutor) error {
 		callbackCalled = true
 		return nil
 	})
