@@ -10,6 +10,8 @@ import (
 )
 
 func TestReaderSuccessfullyPublishesMessage(t *testing.T) {
+	truncateOutboxTable()
+
 	r := outbox.NewReader(db, &fakePublisher{}, outbox.WithInterval(10*time.Millisecond))
 	r.Start()
 	w := outbox.NewWriter(db)
@@ -32,8 +34,12 @@ func TestReaderPublishesMessagesInOrder(t *testing.T) {
 	truncateOutboxTable()
 
 	firstMsg := createMessageFixture()
+
 	secondMsg := createMessageFixture()
+	secondMsg.CreatedAt = firstMsg.CreatedAt.Add(1 * time.Second)
+
 	thirdMsg := createMessageFixture()
+	thirdMsg.CreatedAt = firstMsg.CreatedAt.Add(2 * time.Second)
 
 	msgs := []outbox.Message{
 		firstMsg,
@@ -65,4 +71,61 @@ func TestReaderPublishesMessagesInOrder(t *testing.T) {
 		return nCalls == len(msgs)
 	}, 1*time.Second, 50*time.Millisecond)
 	r.Stop()
+}
+
+func TestReaderOnReadError(t *testing.T) {
+	truncateOutboxTable()
+
+	t.Cleanup(func() {
+		_, err := db.Exec("ALTER TABLE Outbox_old RENAME TO Outbox")
+		require.NoError(t, err)
+	})
+	_, err := db.Exec("ALTER TABLE Outbox RENAME TO Outbox_old")
+	require.NoError(t, err)
+
+	onReadCallbackCalled := false
+	r := outbox.NewReader(db, &fakePublisher{}, outbox.WithInterval(10*time.Millisecond),
+		outbox.WithOnReadError(func(err error) {
+			require.Error(t, err)
+			onReadCallbackCalled = true
+		}))
+	r.Start()
+
+	require.Eventually(t, func() bool {
+		return onReadCallbackCalled
+	}, 1*time.Second, 50*time.Millisecond)
+	r.Stop()
+}
+
+func TestReaderOnDeleteError(t *testing.T) {
+	truncateOutboxTable()
+	t.Cleanup(func() {
+		_, err := db.Exec("ALTER TABLE Outbox_old RENAME TO Outbox")
+		require.NoError(t, err)
+	})
+
+	onDeleteCallbackCalled := false
+	r := outbox.NewReader(db, &fakePublisher{
+		onPublish: func(msg outbox.Message) {
+			_, err := db.Exec("ALTER TABLE Outbox RENAME TO Outbox_old") // force an error on delete
+			require.NoError(t, err)
+		},
+	}, outbox.WithInterval(10*time.Millisecond), outbox.WithOnDeleteError(func(msg outbox.Message, err error) {
+		require.Error(t, err)
+		onDeleteCallbackCalled = true
+	}))
+	r.Start()
+	w := outbox.NewWriter(db)
+	anyMsg := createMessageFixture()
+
+	err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.QueryExecutor) error {
+		return nil
+	})
+	require.NoError(t, err)
+
+	require.Eventually(t, func() bool {
+		return onDeleteCallbackCalled
+	}, 1*time.Second, 50*time.Millisecond)
+	r.Stop()
+
 }
