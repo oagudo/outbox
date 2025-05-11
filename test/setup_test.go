@@ -21,15 +21,25 @@ func TestMain(m *testing.M) {
 	}
 
 	log.Println("Connected to database")
-	_, err = db.Exec("TRUNCATE TABLE Outbox")
+	err = truncateOutboxTable()
 	if err != nil {
 		log.Fatalf("Failed to truncate outbox table: %s", err)
 	}
 
-	_, err = db.Exec("TRUNCATE TABLE Entity")
+	err = truncateEntityTable()
 	if err != nil {
 		log.Fatalf("Failed to truncate entity table: %s", err)
 	}
 
 	os.Exit(m.Run())
+}
+
+func truncateOutboxTable() error {
+	_, err := db.Exec("TRUNCATE TABLE Outbox")
+	return err
+}
+
+func truncateEntityTable() error {
+	_, err := db.Exec("TRUNCATE TABLE Entity")
+	return err
 }

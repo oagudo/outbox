@@ -20,9 +20,8 @@ type Reader struct {
 	db           *sql.DB
 	msgPublisher MessagePublisher
 
-	onDeleteErrorCallback  OnMessageErrorCallback
-	onPublishErrorCallback OnMessageErrorCallback
-	onReadErrorCallback    OnReadErrorCallback
+	onDeleteErrorCallback OnMessageErrorCallback
+	onReadErrorCallback   OnReadErrorCallback
 
 	interval    time.Duration
 	maxMessages int
@@ -51,12 +50,6 @@ func WithOnDeleteError(callback OnMessageErrorCallback) ReaderOption {
 	}
 }
 
-func WithOnPublishError(callback OnMessageErrorCallback) ReaderOption {
-	return func(r *Reader) {
-		r.onPublishErrorCallback = callback
-	}
-}
-
 func WithOnReadError(callback OnReadErrorCallback) ReaderOption {
 	return func(r *Reader) {
 		r.onReadErrorCallback = callback
@@ -76,9 +69,8 @@ func NewReader(db *sql.DB, msgPublisher MessagePublisher, opts ...ReaderOption) 
 		interval:    defaultInterval,
 		maxMessages: defaultMaxMessages,
 
-		onDeleteErrorCallback:  noOpMessageErrorCallback,
-		onPublishErrorCallback: noOpMessageErrorCallback,
-		onReadErrorCallback:    noOpReadErrorCallback,
+		onDeleteErrorCallback: noOpMessageErrorCallback,
+		onReadErrorCallback:   noOpReadErrorCallback,
 	}
 
 	for _, opt := range opts {
@@ -126,7 +118,6 @@ func (r *Reader) publishMessages() {
 	for _, msg := range msgs {
 		err := r.msgPublisher.Publish(context.Background(), msg)
 		if err != nil {
-			r.onPublishErrorCallback(msg, err)
 			continue
 		}
 

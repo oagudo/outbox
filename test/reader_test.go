@@ -10,7 +10,6 @@ import (
 )
 
 func TestReaderSuccessfullyPublishesMessage(t *testing.T) {
-
 	r := outbox.NewReader(db, &fakePublisher{}, outbox.WithInterval(10*time.Millisecond))
 	r.Start()
 	w := outbox.NewWriter(db)
@@ -30,6 +29,8 @@ func TestReaderSuccessfullyPublishesMessage(t *testing.T) {
 }
 
 func TestReaderPublishesMessagesInOrder(t *testing.T) {
+	truncateOutboxTable()
+
 	firstMsg := createMessageFixture()
 	secondMsg := createMessageFixture()
 	thirdMsg := createMessageFixture()
