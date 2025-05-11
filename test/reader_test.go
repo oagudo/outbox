@@ -80,7 +80,7 @@ func TestReaderOnReadError(t *testing.T) {
 		_, err := db.Exec("ALTER TABLE Outbox_old RENAME TO Outbox")
 		require.NoError(t, err)
 	})
-	_, err := db.Exec("ALTER TABLE Outbox RENAME TO Outbox_old")
+	_, err := db.Exec("ALTER TABLE Outbox RENAME TO Outbox_old") // force an error on read
 	require.NoError(t, err)
 
 	onReadCallbackCalled := false
