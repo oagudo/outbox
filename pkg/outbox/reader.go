@@ -133,7 +133,7 @@ func (r *Reader) publishMessages() {
 
 func readOutboxMessages(db *sql.DB, limit int) ([]Message, error) {
 	rows, err := db.Query(`
-        SELECT id, payload, created_at
+        SELECT id, payload, created_at, context
         FROM Outbox
         ORDER BY created_at ASC
         LIMIT $1`, limit)
@@ -147,7 +147,7 @@ func readOutboxMessages(db *sql.DB, limit int) ([]Message, error) {
 	var messages []Message
 	for rows.Next() {
 		var msg Message
-		if err := rows.Scan(&msg.ID, &msg.Payload, &msg.CreatedAt); err != nil {
+		if err := rows.Scan(&msg.ID, &msg.Payload, &msg.CreatedAt, &msg.Context); err != nil {
 			return nil, err
 		}
 		messages = append(messages, msg)
