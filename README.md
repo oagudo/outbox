@@ -15,7 +15,7 @@ Designed to work with any relational database (such as PostgreSQL, MySQL, Cockro
 
 You can find examples for different databases and message brokers:
 
-- [Postgres & Kafka](./examples/postgres-kafka/) 
+- [Postgres & Kafka](./examples/postgres-kafka/service.go) 
 
 ## Getting Started
 
