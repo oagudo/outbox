@@ -161,8 +161,8 @@ func readEntity(t *testing.T, id uuid.UUID) (*entity, bool) {
 
 func createMessageFixture() outbox.Message {
 	msgID := uuid.New()
-	msgContext := []byte("{}")
-	msgPayload := []byte("{}")
+	msgContext := []byte(`{"any_context_key": "any_context_value"}`)
+	msgPayload := []byte(`{"any_payload_key": "any_payload_value"}`)
 	createdAt := time.Now().UTC().Truncate(time.Microsecond)
 
 	return outbox.Message{

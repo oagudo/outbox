@@ -12,11 +12,15 @@ import (
 func TestReaderSuccessfullyPublishesMessage(t *testing.T) {
 	_ = truncateOutboxTable()
 
-	r := outbox.NewReader(db, &fakePublisher{}, outbox.WithInterval(10*time.Millisecond))
+	anyMsg := createMessageFixture()
+
+	r := outbox.NewReader(db, &fakePublisher{
+		onPublish: func(msg outbox.Message) {
+			assertMessageEqual(t, anyMsg, msg)
+		},
+	}, outbox.WithInterval(10*time.Millisecond))
 	r.Start()
 	w := outbox.NewWriter(db)
-
-	anyMsg := createMessageFixture()
 
 	err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.QueryExecutor) error {
 		return nil
