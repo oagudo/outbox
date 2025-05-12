@@ -4,3 +4,5 @@ CREATE TABLE IF NOT EXISTS Outbox (
     context BYTEA NOT NULL,
     payload BYTEA NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_outbox_created_at ON Outbox (created_at);
