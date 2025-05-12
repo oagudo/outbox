@@ -1,10 +1,8 @@
 # Outbox Pattern
 
-This project provides a simple, modular implementation of the **Transactional Outbox Pattern**. 
+Simple library for [**Transactional Outbox Pattern**](https://microservices.io/patterns/data/transactional-outbox.html) in Go
 
-It is designed to be easily adaptable to any relational database (such as PostgreSQL, MySQL, CockroachDB, etc.) and any message broker (including Kafka, NATS, RabbitMQ, and more).
-
-The outbox pattern ensures reliable event publishing by storing messages in a database table as part of your application's local transaction. A separate process then reads these messages and publishes them to your chosen message broker, guaranteeing consistency between your database and your event stream.
+Designed to work with any relational database (such as PostgreSQL, MySQL, CockroachDB, etc.) and any message broker (including Kafka, NATS, RabbitMQ, and more).
 
 ## Key Features
 
