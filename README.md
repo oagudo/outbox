@@ -6,7 +6,7 @@ Designed to work with any relational database (such as PostgreSQL, MySQL, Cockro
 
 ## Key Features
 
-- **Database Agnostic:** Easily configurable to work with PostgreSQL, MySQL, CockroachDB, and other relational databases.
+- **Database Agnostic:** Designed to work with PostgreSQL, MySQL, CockroachDB, and other relational databases.
 - **Message Broker Agnostic:** Integrates seamlessly with popular brokers like Kafka, NATS, RabbitMQ, and others.
 - **Simplicity:** Minimal, easy-to-understand codebase focused on core outbox pattern concepts.
 - **Extensible:** Designed for easy customization and integration into your own projects.
