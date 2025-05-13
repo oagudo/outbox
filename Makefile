@@ -17,3 +17,6 @@ lint:
 	@echo "Running linters..."
 	golangci-lint run
 	@echo "Linting complete." 
+
+release: ## Release new version
+	git tag | grep -q "v${VERSION}" && echo This version was released! Increase VERSION! || git tag "v${VERSION}" && git push origin "v${VERSION}"	
