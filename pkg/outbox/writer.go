@@ -3,6 +3,7 @@ package outbox
 import (
 	"context"
 	"database/sql"
+	"fmt"
 
 	coreSql "github.com/oagudo/outbox/internal/sql"
 )
@@ -60,8 +61,9 @@ func (w *Writer) Write(ctx context.Context, msg Message, callback WriterCallback
 		return err
 	}
 
-	err = tx.ExecContext(ctx, "INSERT INTO Outbox (id, created_at, context, payload) VALUES ($1, $2, $3, $4)",
-		msg.ID, msg.CreatedAt, msg.Context, msg.Payload)
+	query := fmt.Sprintf("INSERT INTO Outbox (id, created_at, context, payload) VALUES (%s, %s, %s, %s)",
+		getSQLPlaceholder(1), getSQLPlaceholder(2), getSQLPlaceholder(3), getSQLPlaceholder(4))
+	err = tx.ExecContext(ctx, query, msg.ID, msg.CreatedAt, msg.Context, msg.Payload)
 	if err != nil {
 		return err
 	}
@@ -84,6 +86,7 @@ func (w *Writer) publishMessage(ctx context.Context, msg Message) {
 
 	err := w.msgPublisher.Publish(ctx, msg)
 	if err == nil {
-		_ = w.sqlExecutor.ExecContext(ctx, "DELETE FROM Outbox WHERE id = $1", msg.ID)
+		query := fmt.Sprintf("DELETE FROM Outbox WHERE id = %s", getSQLPlaceholder(1))
+		_ = w.sqlExecutor.ExecContext(ctx, query, msg.ID)
 	}
 }

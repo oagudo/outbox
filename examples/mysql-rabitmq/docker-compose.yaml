@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: outbox_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: outbox
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./init-scripts:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: outbox_rabbitmq
+    ports:
+      - "5672:5672"   # AMQP protocol port
+      - "15672:15672" # Management UI port
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      
+  rabbitmq-consumer:
+    image: rabbitmq:3-management
+    container_name: rabbitmq_consumer
+    depends_on:
+      - rabbitmq
+    entrypoint: /bin/bash
+    tty: true
+    command: >
+      -c "
+      sleep 10 &&
+      echo 'Waiting for RabbitMQ to be ready...' &&
+      until rabbitmqctl -n rabbit@rabbitmq status >/dev/null 2>&1; do
+        echo 'Waiting for RabbitMQ...' &&
+        sleep 2
+      done &&
+      echo 'RabbitMQ is ready. Use one of these commands to consume messages:' &&
+      echo '- rabbitmqctl -n rabbit@rabbitmq get_message entity [count]' &&
+      echo '- rabbitmqctl -n rabbit@rabbitmq consume_messages queue=entity count=10 ack_mode=ack_requeue_false encoding=auto' &&
+      tail -f /dev/null
+      "

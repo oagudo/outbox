@@ -11,17 +11,17 @@ import (
 	"syscall"
 	"time"
 
+	_ "github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
-	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/oagudo/outbox/pkg/outbox"
-	"github.com/segmentio/kafka-go"
+	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-type kafkaHeaderKey string
+type rabbitHeaderKey string
 
 const (
-	kafkaTraceIDHeaderKey       kafkaHeaderKey = "trace_id"
-	kafkaCorrelationIDHeaderKey kafkaHeaderKey = "correlation_id"
+	rabbitTraceIDHeaderKey       rabbitHeaderKey = "trace_id"
+	rabbitCorrelationIDHeaderKey rabbitHeaderKey = "correlation_id"
 )
 
 type Entity struct {
@@ -33,7 +33,9 @@ type CreateEntityRequest struct {
 }
 
 type messagePublisher struct {
-	kafkaWriter *kafka.Writer
+	conn    *amqp.Connection
+	channel *amqp.Channel
+	queue   string
 }
 
 func (p *messagePublisher) Publish(ctx context.Context, msg outbox.Message) error {
@@ -42,48 +44,80 @@ func (p *messagePublisher) Publish(ctx context.Context, msg outbox.Message) erro
 		log.Printf("failed to unmarshal message context: %v", err)
 		return err
 	}
-	headers := []kafka.Header{}
+
+	headers := amqp.Table{}
 	for k, v := range msgContext {
-		headers = append(headers, kafka.Header{
-			Key:   string(k),
-			Value: []byte(v),
-		})
+		headers[k] = v
 	}
-	err := p.kafkaWriter.WriteMessages(ctx, kafka.Message{
-		Key:     []byte(msg.ID.String()),
-		Value:   msg.Payload,
-		Headers: headers,
-	})
+
+	err := p.channel.PublishWithContext(
+		ctx,
+		"",      // exchange
+		p.queue, // routing key
+		false,   // mandatory
+		false,   // immediate
+		amqp.Publishing{
+			ContentType:  "application/json",
+			Body:         msg.Payload,
+			MessageId:    msg.ID.String(),
+			Headers:      headers,
+			DeliveryMode: amqp.Persistent,
+		},
+	)
 	if err != nil {
 		log.Printf("failed to publish message: %v", err)
 		return err
 	}
 
-	log.Printf("published message %s with content %s and headers %s", msg.ID, string(msg.Payload), string(msg.Context))
+	log.Printf("published message %s with content %s and headers %v", msg.ID, string(msg.Payload), headers)
 
 	return nil
 }
 
 func main() {
 
-	// Postgres setup
-	db, err := sql.Open("pgx", "postgres://postgres:postgres@localhost:5432/outbox?sslmode=disable")
+	// MySQL setup
+	dsn := "user:password@tcp(localhost:3306)/outbox?parseTime=true"
+	db, err := sql.Open("mysql", dsn)
 	if err != nil {
-		log.Fatalf("failed to connect to postgres: %v", err)
+		log.Fatalf("failed to connect to mysql: %v", err)
 	}
 	defer db.Close()
 
-	// Kafka setup
-	kafkaWriter := kafka.NewWriter(kafka.WriterConfig{
-		Brokers:  []string{"localhost:29092"},
-		Topic:    "entity",
-		Balancer: &kafka.LeastBytes{},
-	})
-	defer kafkaWriter.Close()
+	// RabbitMQ setup
+	conn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
+	if err != nil {
+		log.Fatalf("failed to connect to RabbitMQ: %v", err)
+	}
+	defer conn.Close()
+
+	channel, err := conn.Channel()
+	if err != nil {
+		log.Fatalf("failed to open a channel: %v", err)
+	}
+	defer channel.Close()
+
+	// Declare queue
+	q, err := channel.QueueDeclare(
+		"entity", // name
+		true,     // durable
+		false,    // delete when unused
+		false,    // exclusive
+		false,    // no-wait
+		nil,      // arguments
+	)
+	if err != nil {
+		log.Fatalf("failed to declare a queue: %v", err)
+	}
 
 	// Outbox setup
+	outbox.SetDriver(outbox.DriverMySQL)
 	writer := outbox.NewWriter(db)
-	reader := outbox.NewReader(db, &messagePublisher{kafkaWriter: kafkaWriter}, outbox.WithInterval(1*time.Second))
+	reader := outbox.NewReader(db, &messagePublisher{
+		conn:    conn,
+		channel: channel,
+		queue:   q.Name,
+	}, outbox.WithInterval(1*time.Second))
 	reader.Start()
 
 	r := http.NewServeMux()
@@ -110,8 +144,8 @@ func main() {
 		}
 
 		msgContext := map[string]string{
-			string(kafkaTraceIDHeaderKey):       uuid.New().String(), // Add any context you need to the message (eg. trace_id, correlation_id, etc)
-			string(kafkaCorrelationIDHeaderKey): uuid.New().String(),
+			string(rabbitTraceIDHeaderKey):       uuid.New().String(), // Add any context you need to the message (eg. trace_id, correlation_id, etc)
+			string(rabbitCorrelationIDHeaderKey): uuid.New().String(),
 		}
 		msgContextJSON, err := json.Marshal(msgContext)
 		if err != nil {
@@ -126,8 +160,8 @@ func main() {
 		}
 		err = writer.Write(r.Context(), msg, func(ctx context.Context, tx outbox.QueryExecutor) error {
 			return tx.ExecContext(r.Context(),
-				"INSERT INTO Entity (id, created_at) VALUES ($1, $2)",
-				entity.ID, entity.CreatedAt,
+				"INSERT INTO Entity (id, created_at) VALUES (?, ?)",
+				entity.ID.String(), entity.CreatedAt,
 			)
 		})
 		if err != nil {
