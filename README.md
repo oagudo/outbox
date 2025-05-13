@@ -141,6 +141,6 @@ cd examples/mysql-rabitmq # or examples/postgres-kafka
 ../../scripts/up-and-wait.sh
 go run service.go
 
-# in another terminal trigger a POST to trigger entity creation
+# In another terminal trigger a POST to trigger entity creation
 curl -X POST http://localhost:8080/entity
 ```
