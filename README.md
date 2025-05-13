@@ -2,8 +2,6 @@
 
 Simple library for [Transactional Outbox Pattern](https://microservices.io/patterns/data/transactional-outbox.html) in Go
 
-Designed to work with any relational database (such as PostgreSQL, MySQL, CockroachDB, etc.) and any message broker (including Kafka, NATS, RabbitMQ, and more).
-
 ## Key Features
 
 - **Database Agnostic:** Designed to work with PostgreSQL, MySQL, CockroachDB, and other relational databases.
