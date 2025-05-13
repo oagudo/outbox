@@ -13,10 +13,23 @@ const (
 	defaultMaxMessages = 100
 )
 
+// MessagePublisher defines an interface for publishing messages to an external system.
+type MessagePublisher interface {
+	// Publish sends a message to an external system (like a message broker).
+	// This function can be invoked multiple times for the same message.
+	// Message consumers must be idempotent and not affected by receiving duplicate messages.
+	Publish(ctx context.Context, msg Message) error
+}
+
+// OnReadErrorCallback is a function called when an error occurs while reading messages from the outbox.
 type OnReadErrorCallback func(error)
 
+// OnMessageErrorCallback is a function called when an error occurs while deleting a message from the outbox
+// after it has been successfully published.
 type OnMessageErrorCallback func(Message, error)
 
+// Reader periodically reads unpublished messages from the outbox table
+// and attempts to publish them to an external system.
 type Reader struct {
 	db           *sql.DB
 	msgPublisher MessagePublisher
@@ -31,26 +44,35 @@ type Reader struct {
 	stop        chan struct{}
 }
 
+// ReaderOption is a function that configures a Reader instance.
 type ReaderOption func(*Reader)
 
+// WithInterval sets the time between outbox reader processing attempts.
+// Default is 10 seconds.
 func WithInterval(interval time.Duration) ReaderOption {
 	return func(r *Reader) {
 		r.interval = interval
 	}
 }
 
+// WithMaxMessages sets the maximum number of messages to process in a single batch.
+// Default is 100 messages.
 func WithMaxMessages(maxMessages int) ReaderOption {
 	return func(r *Reader) {
 		r.maxMessages = maxMessages
 	}
 }
 
+// WithOnDeleteError sets a callback function that is called when an error occurs
+// while deleting a message from the outbox after it has been successfully published.
 func WithOnDeleteError(callback OnMessageErrorCallback) ReaderOption {
 	return func(r *Reader) {
 		r.onDeleteErrorCallback = callback
 	}
 }
 
+// WithOnReadError sets a callback function that is called when an error occurs
+// while reading messages from the outbox.
 func WithOnReadError(callback OnReadErrorCallback) ReaderOption {
 	return func(r *Reader) {
 		r.onReadErrorCallback = callback
@@ -61,6 +83,8 @@ func noOpMessageErrorCallback(Message, error) {}
 
 func noOpReadErrorCallback(error) {}
 
+// NewReader creates a new outbox Reader with the given database connection,
+// message publisher, and options.
 func NewReader(db *sql.DB, msgPublisher MessagePublisher, opts ...ReaderOption) *Reader {
 	r := &Reader{
 		db:           db,
@@ -81,6 +105,9 @@ func NewReader(db *sql.DB, msgPublisher MessagePublisher, opts ...ReaderOption) 
 	return r
 }
 
+// Start begins the background processing of outbox messages.
+// It periodically reads unpublished messages and attempts to publish them.
+// If Start is called multiple times, only the first call has an effect.
 func (r *Reader) Start() {
 	if !atomic.CompareAndSwapInt32(&r.started, 0, 1) {
 		return
@@ -101,6 +128,8 @@ func (r *Reader) Start() {
 	}()
 }
 
+// Stop halts the background processing of outbox messages.
+// If Stop is called multiple times, only the first call has an effect.
 func (r *Reader) Stop() {
 	if !atomic.CompareAndSwapInt32(&r.closed, 0, 1) {
 		return

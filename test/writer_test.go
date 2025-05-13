@@ -24,8 +24,8 @@ func TestWriterSuccessfullyWritesToOutbox(t *testing.T) {
 	anyMsg := createMessageFixture()
 	anyEntity := createEntityFixture()
 
-	err := w.Write(context.Background(), anyMsg, func(ctx context.Context, executor outbox.QueryExecutor) error {
-		err := executor.ExecContext(ctx, "INSERT INTO Entity (id, created_at) VALUES ($1, $2)", anyEntity.ID, anyEntity.CreatedAt)
+	err := w.Write(context.Background(), anyMsg, func(ctx context.Context, executor outbox.TxQueryExecutor) error {
+		err := executor(ctx, "INSERT INTO Entity (id, created_at) VALUES ($1, $2)", anyEntity.ID, anyEntity.CreatedAt)
 		require.NoError(t, err)
 		return nil
 	})
@@ -46,14 +46,14 @@ func TestWriterRollsBackOnOutboxWriteError(t *testing.T) {
 
 	// Write a message to the outbox
 	anyMsg := createMessageFixture()
-	err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.QueryExecutor) error {
+	err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxQueryExecutor) error {
 		return nil
 	})
 	require.NoError(t, err)
 
 	anyEntity := createEntityFixture()
-	err = w.Write(context.Background(), anyMsg, func(ctx context.Context, executor outbox.QueryExecutor) error {
-		err := executor.ExecContext(ctx, "INSERT INTO Entity (id, created_at) VALUES ($1, $2)", anyEntity.ID, anyEntity.CreatedAt)
+	err = w.Write(context.Background(), anyMsg, func(ctx context.Context, executor outbox.TxQueryExecutor) error {
+		err := executor(ctx, "INSERT INTO Entity (id, created_at) VALUES ($1, $2)", anyEntity.ID, anyEntity.CreatedAt)
 		require.NoError(t, err)
 		return nil
 	})
@@ -71,7 +71,7 @@ func TestWriterRollsBackOnCallbackError(t *testing.T) {
 
 	anyMsg := createMessageFixture()
 
-	err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.QueryExecutor) error {
+	err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxQueryExecutor) error {
 		return errors.New("any error in callback")
 	})
 
@@ -101,7 +101,7 @@ func TestWriterWithOptimisticPublisher(t *testing.T) {
 		w := outbox.NewWriter(db, outbox.WithOptimisticPublisher(publisher))
 
 		anyMsg := createMessageFixture()
-		err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.QueryExecutor) error {
+		err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxQueryExecutor) error {
 			return nil
 		})
 		require.NoError(t, err)
@@ -117,7 +117,7 @@ func TestWriterWithOptimisticPublisher(t *testing.T) {
 		w := outbox.NewWriter(db, outbox.WithOptimisticPublisher(publisher))
 
 		anyMsg := createMessageFixture()
-		err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.QueryExecutor) error {
+		err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxQueryExecutor) error {
 			return nil
 		})
 		require.NoError(t, err)
