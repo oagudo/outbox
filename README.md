@@ -128,3 +128,16 @@ Complete working examples for different databases and message brokers:
 
 - [Postgres & Kafka](./examples/postgres-kafka/service.go) 
 - [MySQL & RabbitMQ](./examples/mysql-rabitmq/service.go) 
+
+To run them:
+
+```bash
+cd examples/mysql-rabitmq # or examples/postgres-kafka
+docker-compose up -d
+
+# wait for deps to start and run
+go run service.go
+
+# in another terminal trigger a POST to trigger entity creation
+curl -X POST http://localhost:8080/entity
+```
