@@ -2,13 +2,7 @@
 
 start:
 	@echo "Starting test dependencies with Docker Compose..."
-	cd test && docker compose up -d
-	@echo "Waiting for PostgreSQL to be healthy..."
-	@until docker exec outbox_postgres pg_isready -U postgres; do \
-		echo "PostgreSQL is not ready yet - sleeping for 1 second..."; \
-		sleep 1; \
-	done
-	@echo "PostgreSQL is ready."
+	cd test && ../scripts/up-and-wait.sh
 
 stop:
 	@echo "Stopping Docker resources..."

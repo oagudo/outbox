@@ -131,9 +131,7 @@ To run them:
 
 ```bash
 cd examples/mysql-rabitmq # or examples/postgres-kafka
-docker-compose up -d
-
-# wait for deps to start and run
+../../scripts/up-and-wait.sh
 go run service.go
 
 # in another terminal trigger a POST to trigger entity creation

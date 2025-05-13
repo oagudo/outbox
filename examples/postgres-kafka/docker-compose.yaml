@@ -3,7 +3,7 @@ version: '3.8'
 services:
   postgres:
     image: postgres:16
-    container_name: outbox_postgres
+    container_name: outbox_example_postgres
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -14,24 +14,32 @@ services:
       - ./init-scripts:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+      interval: 2s
+      timeout: 3s
+      retries: 10
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.4.0
-    container_name: outbox_zookeeper
+    container_name: outbox_example_zookeeper
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
+      ZOOKEEPER_4LW_COMMANDS_WHITELIST: "*"
     ports:
       - "2181:2181"
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo srvr | nc -w 2 localhost 2181"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+      start_period: 5s
 
   kafka:
     image: confluentinc/cp-kafka:7.4.0
-    container_name: outbox_kafka
+    container_name: outbox_example_kafka
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_healthy
     ports:
       - "9092:9092"
       - "29092:29092"
@@ -45,19 +53,25 @@ services:
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
     healthcheck:
       test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      interval: 3s
+      timeout: 3s
+      retries: 10
       
   kafka-init:
     image: confluentinc/cp-kafka:7.5.0
     depends_on:
-      - kafka
+      kafka:
+        condition: service_healthy
     entrypoint: ["/bin/sh", "-c"]
     command: |
       "
-      # Wait for Kafka to be ready
-      while ! nc -z kafka 9092; do sleep 1; done
       # Create the topic
       kafka-topics --create --topic entity --bootstrap-server kafka:9092 --partitions 1 --replication-factor 1 --if-not-exists
+      echo 'Kafka topic creation completed'
       "
+    healthcheck:
+      test: ["CMD-SHELL", "exit 0"]
+      interval: 1s
+      timeout: 1s
+      retries: 10
+      start_period: 1s
