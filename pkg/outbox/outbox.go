@@ -2,10 +2,10 @@ package outbox
 
 import "fmt"
 
-// DriverType represents a SQL database type
+// DriverType represents a SQL database type.
 type DriverType string
 
-// Supported database driver types
+// Supported database driver types.
 const (
 	DriverPostgres  DriverType = "postgres"
 	DriverMySQL     DriverType = "mysql"
@@ -21,16 +21,16 @@ type outbox struct {
 	dbDriver DriverType
 }
 
-// SetDriver sets the SQL driver used by the outbox
+// SetDriver sets the SQL driver used by the outbox.
 func SetDriver(driver DriverType) {
 	o.setDriver(driver)
 }
 
 func init() {
-	o = new()
+	o = newOutbox()
 }
 
-func new() *outbox {
+func newOutbox() *outbox {
 	return &outbox{
 		dbDriver: DriverPostgres,
 	}

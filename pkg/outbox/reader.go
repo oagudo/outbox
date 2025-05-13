@@ -122,6 +122,7 @@ func (r *Reader) publishMessages() {
 			continue
 		}
 
+		// nolint:gosec
 		query := fmt.Sprintf("DELETE FROM Outbox WHERE id = %s", getSQLPlaceholder(1))
 		_, err = r.db.Exec(query, msg.ID)
 		if err != nil {
@@ -131,6 +132,7 @@ func (r *Reader) publishMessages() {
 }
 
 func readOutboxMessages(db *sql.DB, limit int) ([]Message, error) {
+	// nolint:gosec
 	query := fmt.Sprintf("SELECT id, payload, created_at, context FROM Outbox ORDER BY created_at ASC LIMIT %s", getSQLPlaceholder(1))
 	rows, err := db.Query(query, limit)
 	if err != nil {

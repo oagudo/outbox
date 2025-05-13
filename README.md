@@ -11,6 +11,13 @@ Designed to work with any relational database (such as PostgreSQL, MySQL, Cockro
 - **Simplicity:** Minimal, easy-to-understand codebase focused on core outbox pattern concepts.
 - **Extensible:** Designed for easy customization and integration into your own projects.
 
+## Usage
+
+### The writer
+```go
+// setup the writer
+```
+
 ## Examples
 
 You can find examples for different databases and message brokers:
