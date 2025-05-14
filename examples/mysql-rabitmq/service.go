@@ -119,6 +119,7 @@ func main() {
 		queue:   q.Name,
 	}, outbox.WithInterval(1*time.Second))
 	reader.Start()
+	defer reader.Stop()
 
 	r := http.NewServeMux()
 
@@ -199,6 +200,5 @@ func main() {
 		log.Fatalf("Server forced to shutdown: %v", err)
 	}
 
-	reader.Stop()
 	log.Println("Server exited gracefully")
 }

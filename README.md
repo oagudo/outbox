@@ -28,14 +28,9 @@ The library consists of two main components:
 The Writer ensures your entity and outbox message are stored together atomically:
 
 ```go
-// Connect to your database
-db, err := sql.Open("mysql", "user:password@tcp(localhost:3306)/database")
-if err != nil {
-    log.Fatalf("failed to connect to database: %v", err)
-}
-
-// For MySQL or other database types, set the driver (optional, defaults to PostgreSQL)
-outbox.SetDriver(outbox.DriverMySQL)
+// Setup database connection
+db, _ := sql.Open("pgx", "postgres://user:password@localhost:5432/outbox?sslmode=disable")
+// outbox.SetDriver(outbox.DriverMySQL) Optional: only for non-PostgreSQL databases (MySQL, etc.)
 
 // Create a writer instance
 writer := outbox.NewWriter(db)
@@ -45,41 +40,27 @@ writer := outbox.NewWriter(db)
 // writer := outbox.NewWriter(db, outbox.WithOptimisticPublisher(msgPublisher))
 
 // In your business logic:
-// 1. Create your entity
 entity := Entity{
     ID:        uuid.New(),
     CreatedAt: time.Now().UTC(),
 }
 
-// 2. Prepare your message payload and context
+// Create outbox message
 entityJSON, _ := json.Marshal(entity)
-msgContext := map[string]string{
-    "trace_id":       uuid.New().String(),
-    "correlation_id": uuid.New().String(),
-}
-msgContextJSON, _ := json.Marshal(msgContext)
-
-// 3. Create an outbox message
 msg := outbox.Message{
-    ID:        entity.ID,        // Unique identifier for the message
-    CreatedAt: entity.CreatedAt, // When the message was created
-    Payload:   entityJSON,       // The actual message content
-    Context:   msgContextJSON,   // Additional metadata for the message
+    ID:        entity.ID,
+    CreatedAt: entity.CreatedAt,
+    Payload:   entityJSON,
+    Context:   json.RawMessage(`{"trace_id":"abc123","correlation_id":"xyz789"}`), // Any additional metadata for the message
 }
 
-// 4. Write the message and entity in a single transaction
-err = writer.Write(
-    ctx, 
-    msg, 
-    func(ctx context.Context, txExecFunc outbox.TxExecFunc) error {
-        // This callback executes within a transaction
-        // Insert your entity using the provided `txExecFunc` function
-        return txExecFunc(ctx,
-            "INSERT INTO Entity (id, created_at) VALUES (?, ?)",
-            entity.ID.String(), entity.CreatedAt,
-        )
-    }
-)
+// Write message and entity in a single transaction
+err = writer.Write(ctx, msg, func(ctx context.Context, txExecFunc outbox.TxExecFunc) error {
+    return txExecFunc(ctx, // This query executes within a transaction
+        "INSERT INTO Entity (id, created_at) VALUES (?, ?)",
+        entity.ID.String(), entity.CreatedAt,
+    )
+})
 ```
 
 ### The Reader
@@ -87,28 +68,23 @@ err = writer.Write(
 The Reader periodically checks for unsent messages and publishes them to your message broker:
 
 ```go
-// 1. Create a message publisher implementation
+// Create a message publisher implementation
 type messagePublisher struct {
     // Your message broker client (e.g., Kafka, RabbitMQ)
 }
-
-// Implement the Publisher interface
 func (p *messagePublisher) Publish(ctx context.Context, msg outbox.Message) error {
-    // Publish the message to your broker
-    // See examples below for specific implementations
+    // Publish the message to your broker. See examples below for specific implementations
     return nil
 }
 
-// 2. Create and start the reader
+// Create and start the reader
 reader := outbox.NewReader(
     db,                           // Same database connection
     &messagePublisher{},          // Your publisher implementation
     outbox.WithInterval(5*time.Second), // Optional: Custom polling interval (default: 10s)
 )
 reader.Start()
-
-// 3. Stop the reader during application shutdown
-reader.Stop()
+defer reader.Stop() // Stop during application shutdown
 ```
 
 ### Database Setup

@@ -85,7 +85,7 @@ func main() {
 	writer := outbox.NewWriter(db)
 	reader := outbox.NewReader(db, &messagePublisher{kafkaWriter: kafkaWriter}, outbox.WithInterval(1*time.Second))
 	reader.Start()
-
+	defer reader.Stop()
 	r := http.NewServeMux()
 
 	r.HandleFunc("/entity", func(w http.ResponseWriter, r *http.Request) {
@@ -165,6 +165,5 @@ func main() {
 		log.Fatalf("Server forced to shutdown: %v", err)
 	}
 
-	reader.Stop()
 	log.Println("Server exited gracefully")
 }
