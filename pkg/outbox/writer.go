@@ -16,12 +16,12 @@ type Writer struct {
 	msgPublisher MessagePublisher
 }
 
-// TxQueryExecutor is a function that executes a SQL query within a transaction.
-type TxQueryExecutor func(ctx context.Context, query string, args ...any) error
+// TxExecFunc is a function that executes a SQL query within a transaction.
+type TxExecFunc func(ctx context.Context, query string, args ...any) error
 
-// WriterCallback is a function that executes user-defined queries within the transaction that
+// WriterTxFunc is a function that executes user-defined queries within the transaction that
 // stores a message in the outbox.
-type WriterCallback func(ctx context.Context, txQueryExecutor TxQueryExecutor) error
+type WriterTxFunc func(ctx context.Context, txExecFunc TxExecFunc) error
 
 // WriterOption is a function that configures a Writer instance.
 type WriterOption func(*Writer)
@@ -55,7 +55,7 @@ func NewWriter(db *sql.DB, opts ...WriterOption) *Writer {
 //
 // If optimistic publishing is enabled, the message will also be published to the external system
 // after the transaction is committed asynchronously.
-func (w *Writer) Write(ctx context.Context, msg Message, callback WriterCallback) error {
+func (w *Writer) Write(ctx context.Context, msg Message, writerTxFunc WriterTxFunc) error {
 	tx, err := w.sqlExecutor.BeginTx()
 	if err != nil {
 		return err
@@ -68,7 +68,7 @@ func (w *Writer) Write(ctx context.Context, msg Message, callback WriterCallback
 		}
 	}()
 
-	err = callback(ctx, tx.ExecContext)
+	err = writerTxFunc(ctx, tx.ExecContext)
 	if err != nil {
 		return err
 	}

@@ -2,7 +2,7 @@
 
 [![Release](https://img.shields.io/github/release/oagudo/outbox.svg?style=flat-square)](https://github.com/oagudo/outbox/releases/latest)
 [![Software License](https://img.shields.io/badge/license-MIT-brightgreen.svg?style=flat-square)](LICENSE.md)
-![GitHub Actions](https://github.com/oagudo/outbox/actions/workflows/go.yml/badge.svg)
+![GitHub Actions](https://github.com/oagudo/outbox/actions/workflows/ci.yml/badge.svg)
 [![Go Report Card](https://goreportcard.com/badge/github.com/oagudo/outbox?style=flat-square)](https://goreportcard.com/report/github.com/oagudo/outbox)
 [![Go Reference](https://pkg.go.dev/badge/github.com/oagudo/outbox/v4.svg)](https://pkg.go.dev/github.com/oagudo/outbox)
 
@@ -71,10 +71,10 @@ msg := outbox.Message{
 err = writer.Write(
     ctx, 
     msg, 
-    func(ctx context.Context, tx outbox.QueryExecutor) error {
+    func(ctx context.Context, txExecFunc outbox.TxExecFunc) error {
         // This callback executes within a transaction
-        // Insert your entity using the provided `tx.ExecContext` function
-        return tx.ExecContext(ctx,
+        // Insert your entity using the provided `txExecFunc` function
+        return txExecFunc(ctx,
             "INSERT INTO Entity (id, created_at) VALUES (?, ?)",
             entity.ID.String(), entity.CreatedAt,
         )

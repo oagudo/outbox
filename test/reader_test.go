@@ -22,7 +22,7 @@ func TestReaderSuccessfullyPublishesMessage(t *testing.T) {
 	r.Start()
 	w := outbox.NewWriter(db)
 
-	err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxQueryExecutor) error {
+	err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxExecFunc) error {
 		return nil
 	})
 	require.NoError(t, err)
@@ -53,7 +53,7 @@ func TestReaderPublishesMessagesInOrder(t *testing.T) {
 
 	w := outbox.NewWriter(db)
 	for _, msg := range msgs {
-		err := w.Write(context.Background(), msg, func(_ context.Context, _ outbox.TxQueryExecutor) error {
+		err := w.Write(context.Background(), msg, func(_ context.Context, _ outbox.TxExecFunc) error {
 			return nil
 		})
 		require.NoError(t, err)
@@ -123,7 +123,7 @@ func TestReaderOnDeleteError(t *testing.T) {
 	w := outbox.NewWriter(db)
 	anyMsg := createMessageFixture()
 
-	err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxQueryExecutor) error {
+	err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxExecFunc) error {
 		return nil
 	})
 	require.NoError(t, err)
