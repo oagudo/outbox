@@ -16,7 +16,7 @@ type Message struct {
 	// CreatedAt is the timestamp when the message was created
 	CreatedAt time.Time
 
-	// Context is optional metadata about the message, typically JSON serialized
+	// Context is optional metadata about the message (correlation ID, trace ID, etc.), typically JSON serialized
 	Context []byte
 
 	// Payload contains the actual message data, typically JSON serialized

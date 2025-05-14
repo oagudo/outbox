@@ -69,7 +69,7 @@ func (p *messagePublisher) Publish(ctx context.Context, msg outbox.Message) erro
 		return err
 	}
 
-	log.Printf("published message %s with content %s and headers %v", msg.ID, string(msg.Payload), headers)
+	log.Printf("published message %s with content %s and headers %v", msg.ID, string(msg.Payload), string(msg.Context))
 
 	return nil
 }
