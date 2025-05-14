@@ -83,7 +83,7 @@ func (w *Writer) Write(ctx context.Context, msg Message, writerTxFunc WriterTxFu
 	err = tx.Commit()
 	txCommitted = err == nil
 
-	if txCommitted {
+	if txCommitted && w.msgPublisher != nil {
 		ctxWithoutCancel := context.WithoutCancel(ctx)
 		go w.publishMessage(ctxWithoutCancel, msg) // optimistically publish the message
 	}
@@ -92,10 +92,6 @@ func (w *Writer) Write(ctx context.Context, msg Message, writerTxFunc WriterTxFu
 }
 
 func (w *Writer) publishMessage(ctx context.Context, msg Message) {
-	if w.msgPublisher == nil {
-		return
-	}
-
 	err := w.msgPublisher.Publish(ctx, msg)
 	if err == nil {
 		query := fmt.Sprintf("DELETE FROM Outbox WHERE id = %s", getSQLPlaceholder(1))
