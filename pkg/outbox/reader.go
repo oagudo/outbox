@@ -8,11 +8,6 @@ import (
 	"time"
 )
 
-const (
-	defaultInterval    = 10 * time.Second
-	defaultMaxMessages = 100
-)
-
 // MessagePublisher defines an interface for publishing messages to an external system.
 type MessagePublisher interface {
 	// Publish sends a message to an external system (like a message broker).
@@ -21,12 +16,12 @@ type MessagePublisher interface {
 	Publish(ctx context.Context, msg Message) error
 }
 
-// OnReadErrorCallback is a function called when an error occurs while reading messages from the outbox.
-type OnReadErrorCallback func(error)
+// OnReadErrorFunc is a function called when an error occurs while reading messages from the outbox.
+type OnReadErrorFunc func(error)
 
-// OnMessageErrorCallback is a function called when an error occurs while deleting a message from the outbox
+// OnMessageErrorFunc is a function called when an error occurs while deleting a message from the outbox
 // after it has been successfully published.
-type OnMessageErrorCallback func(Message, error)
+type OnMessageErrorFunc func(Message, error)
 
 // Reader periodically reads unpublished messages from the outbox table
 // and attempts to publish them to an external system.
@@ -34,8 +29,8 @@ type Reader struct {
 	db           *sql.DB
 	msgPublisher MessagePublisher
 
-	onDeleteErrorCallback OnMessageErrorCallback
-	onReadErrorCallback   OnReadErrorCallback
+	onDeleteErrorCallback OnMessageErrorFunc
+	onReadErrorCallback   OnReadErrorFunc
 
 	interval    time.Duration
 	maxMessages int
@@ -65,7 +60,7 @@ func WithMaxMessages(maxMessages int) ReaderOption {
 
 // WithOnDeleteError sets a callback function that is called when an error occurs
 // while deleting a message from the outbox after it has been successfully published.
-func WithOnDeleteError(callback OnMessageErrorCallback) ReaderOption {
+func WithOnDeleteError(callback OnMessageErrorFunc) ReaderOption {
 	return func(r *Reader) {
 		r.onDeleteErrorCallback = callback
 	}
@@ -73,15 +68,15 @@ func WithOnDeleteError(callback OnMessageErrorCallback) ReaderOption {
 
 // WithOnReadError sets a callback function that is called when an error occurs
 // while reading messages from the outbox.
-func WithOnReadError(callback OnReadErrorCallback) ReaderOption {
+func WithOnReadError(callback OnReadErrorFunc) ReaderOption {
 	return func(r *Reader) {
 		r.onReadErrorCallback = callback
 	}
 }
 
-func noOpMessageErrorCallback(Message, error) {}
+func noOpMessageErrorFunc(Message, error) {}
 
-func noOpReadErrorCallback(error) {}
+func noOpReadErrorFunc(error) {}
 
 // NewReader creates a new outbox Reader with the given database connection,
 // message publisher, and options.
@@ -91,11 +86,11 @@ func NewReader(db *sql.DB, msgPublisher MessagePublisher, opts ...ReaderOption) 
 		msgPublisher: msgPublisher,
 		stop:         make(chan struct{}),
 
-		interval:    defaultInterval,
-		maxMessages: defaultMaxMessages,
+		interval:    10 * time.Second,
+		maxMessages: 100,
 
-		onDeleteErrorCallback: noOpMessageErrorCallback,
-		onReadErrorCallback:   noOpReadErrorCallback,
+		onDeleteErrorCallback: noOpMessageErrorFunc,
+		onReadErrorCallback:   noOpReadErrorFunc,
 	}
 
 	for _, opt := range opts {
