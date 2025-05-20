@@ -112,7 +112,7 @@ func TestWriterWithOptimisticPublisher(t *testing.T) {
 		}, time.Second, 50*time.Millisecond)
 	})
 
-	t.Run("does remove message from outbox if publisher returns an error", func(t *testing.T) {
+	t.Run("does not remove message from outbox if publisher returns an error", func(t *testing.T) {
 		publisher := &fakePublisher{publishErr: errors.New("any publisher error")}
 		w := outbox.NewWriter(db, outbox.WithOptimisticPublisher(publisher))
 
