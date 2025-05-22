@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/oagudo/outbox/pkg/outbox"
 	"github.com/stretchr/testify/require"
 )
@@ -32,7 +31,10 @@ func TestReaderSuccessfullyPublishesMessage(t *testing.T) {
 	}, outbox.WithInterval(readerInterval))
 	r.Start()
 
-	waitForMessageDeletion(t, anyMsg.ID)
+	require.Eventually(t, func() bool {
+		_, found := readOutboxMessage(t, anyMsg.ID)
+		return !found
+	}, testTimeout, pollInterval)
 
 	err := r.Stop(context.Background())
 	require.NoError(t, err)
@@ -249,15 +251,6 @@ func countMessages(t *testing.T) (int, error) {
 	var count int
 	err := db.QueryRow("SELECT COUNT(*) FROM Outbox").Scan(&count)
 	return count, err
-}
-
-func waitForMessageDeletion(t *testing.T, msgID uuid.UUID) {
-	t.Helper()
-
-	require.Eventually(t, func() bool {
-		_, found := readOutboxMessage(t, msgID)
-		return !found
-	}, testTimeout, pollInterval, "Message should be deleted from outbox")
 }
 
 func writeMessage(t *testing.T, msg outbox.Message) {
