@@ -13,13 +13,12 @@ import (
 )
 
 func TestReaderSuccessfullyPublishesMessage(t *testing.T) {
-	err := truncateOutboxTable()
-	require.NoError(t, err)
+	setupTest(t)
 
 	anyMsg := createMessageFixture()
 
 	w := outbox.NewWriter(db)
-	err = w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxExecFunc) error {
+	err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxExecFunc) error {
 		return nil
 	})
 	require.NoError(t, err)
@@ -41,8 +40,7 @@ func TestReaderSuccessfullyPublishesMessage(t *testing.T) {
 }
 
 func TestReaderPublishesMessagesInOrder(t *testing.T) {
-	err := truncateOutboxTable()
-	require.NoError(t, err)
+	setupTest(t)
 
 	firstMsg := createMessageFixture()
 
@@ -83,19 +81,18 @@ func TestReaderPublishesMessagesInOrder(t *testing.T) {
 		return atomic.LoadInt32(&onPublishCalls) == int32(len(msgs)) //nolint:gosec
 	}, 1*time.Second, 50*time.Millisecond)
 
-	err = r.Stop(context.Background())
+	err := r.Stop(context.Background())
 	require.NoError(t, err)
 }
 
 func TestReaderOnReadError(t *testing.T) {
-	err := truncateOutboxTable()
-	require.NoError(t, err)
+	setupTest(t)
 
 	t.Cleanup(func() {
 		_, err := db.Exec("ALTER TABLE Outbox_old RENAME TO Outbox")
 		require.NoError(t, err)
 	})
-	_, err = db.Exec("ALTER TABLE Outbox RENAME TO Outbox_old") // force an error on read
+	_, err := db.Exec("ALTER TABLE Outbox RENAME TO Outbox_old") // force an error on read
 	require.NoError(t, err)
 
 	var onReadCallbackCalled atomic.Bool
@@ -113,8 +110,7 @@ func TestReaderOnReadError(t *testing.T) {
 }
 
 func TestReaderOnDeleteError(t *testing.T) {
-	err := truncateOutboxTable()
-	require.NoError(t, err)
+	setupTest(t)
 
 	t.Cleanup(func() {
 		_, err := db.Exec("ALTER TABLE Outbox_old RENAME TO Outbox")
@@ -124,7 +120,7 @@ func TestReaderOnDeleteError(t *testing.T) {
 	w := outbox.NewWriter(db)
 	anyMsg := createMessageFixture()
 
-	err = w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxExecFunc) error {
+	err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxExecFunc) error {
 		return nil
 	})
 	require.NoError(t, err)
@@ -147,13 +143,12 @@ func TestReaderOnDeleteError(t *testing.T) {
 }
 
 func TestStopTimesOutIfReaderIsNotStopped(t *testing.T) {
-	err := truncateOutboxTable()
-	require.NoError(t, err)
+	setupTest(t)
 
 	w := outbox.NewWriter(db)
 	anyMsg := createMessageFixture()
 
-	err = w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxExecFunc) error {
+	err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxExecFunc) error {
 		return nil
 	})
 	require.NoError(t, err)
@@ -179,12 +174,11 @@ func TestStopTimesOutIfReaderIsNotStopped(t *testing.T) {
 }
 
 func TestShouldKeepTryingToPublishMessagesAfterError(t *testing.T) {
-	err := truncateOutboxTable()
-	require.NoError(t, err)
+	setupTest(t)
 
 	w := outbox.NewWriter(db)
 	anyMsg := createMessageFixture()
-	err = w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxExecFunc) error {
+	err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxExecFunc) error {
 		return nil
 	})
 	require.NoError(t, err)
@@ -207,8 +201,7 @@ func TestShouldKeepTryingToPublishMessagesAfterError(t *testing.T) {
 }
 
 func TestStopCancelsInProgressPublishing(t *testing.T) {
-	err := truncateOutboxTable()
-	require.NoError(t, err)
+	setupTest(t)
 
 	maxMessages := 100
 
@@ -235,7 +228,7 @@ func TestStopCancelsInProgressPublishing(t *testing.T) {
 
 	wg.Wait()
 
-	err = r.Stop(context.Background())
+	err := r.Stop(context.Background())
 	require.NoError(t, err)
 
 	count, err := countMessages(t)
@@ -244,18 +237,23 @@ func TestStopCancelsInProgressPublishing(t *testing.T) {
 }
 
 func TestStartAndStopCalledMultipleTimes(t *testing.T) {
-	err := truncateOutboxTable()
-	require.NoError(t, err)
+	setupTest(t)
 
 	r := outbox.NewReader(db, &fakePublisher{})
 
 	r.Start()
 	r.Start() // should not panic
 
-	err = r.Stop(context.Background())
+	err := r.Stop(context.Background())
 	require.NoError(t, err)
 
 	err = r.Stop(context.Background())
+	require.NoError(t, err)
+}
+
+func setupTest(t *testing.T) {
+	t.Helper()
+	err := truncateOutboxTable()
 	require.NoError(t, err)
 }
 
