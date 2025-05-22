@@ -403,3 +403,4 @@ FodyWeavers.xsd
 # Coverage files
 coverage.out
 coverage.html
+coverage.txt

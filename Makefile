@@ -1,4 +1,7 @@
-.PHONY: tests start stop lint test-coverage coverage-report
+.PHONY: all test start stop lint test-coverage coverage-report clean help
+
+# Default target when just running `make`
+all: lint test
 
 start:
 	@echo "Starting test dependencies with Docker Compose..."
@@ -15,13 +18,17 @@ test: start
 
 test-coverage: start
 	@echo "Running tests with coverage..."
-	go test -v ./... -cover -coverpkg=./pkg/outbox -coverprofile=coverage.out
-	@echo "Coverage data written to coverage.out"
+	go test -v ./... -covermode=atomic -cover -coverpkg=./pkg/outbox -coverprofile=coverage.txt
+	@echo "Coverage data written to coverage.txt"
 
 coverage-report:
 	@echo "Generating coverage report..."
-	go tool cover -html=coverage.out -o coverage.html
+	go tool cover -html=coverage.txt -o coverage.html
 	@echo "Coverage report generated at coverage.html"
+
+coverage-view: coverage-report
+	@echo "Opening coverage report in browser..."
+	open coverage.html
 
 lint:
 	@echo "Running linters..."
