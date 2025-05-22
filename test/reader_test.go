@@ -61,12 +61,12 @@ func TestReaderPublishesMessagesInOrder(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	var nCalls int32 = 0
+	var onPublishCalls int32 = 0
 	r := outbox.NewReader(db, &fakePublisher{
 		onPublish: func(msg outbox.Message) {
-			currentCalls := atomic.LoadInt32(&nCalls)
+			currentCalls := atomic.LoadInt32(&onPublishCalls)
 			require.Equal(t, msg.ID, msgs[currentCalls].ID) // they are published in order
-			atomic.AddInt32(&nCalls, 1)
+			atomic.AddInt32(&onPublishCalls, 1)
 		},
 	},
 		outbox.WithInterval(10*time.Millisecond),
@@ -75,7 +75,7 @@ func TestReaderPublishesMessagesInOrder(t *testing.T) {
 	r.Start()
 
 	require.Eventually(t, func() bool {
-		return atomic.LoadInt32(&nCalls) == int32(len(msgs)) //nolint:gosec
+		return atomic.LoadInt32(&onPublishCalls) == int32(len(msgs)) //nolint:gosec
 	}, 1*time.Second, 50*time.Millisecond)
 	r.Stop()
 }
