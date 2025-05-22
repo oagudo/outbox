@@ -2,7 +2,6 @@ package test
 
 import (
 	"context"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -16,28 +15,24 @@ func TestReaderSuccessfullyPublishesMessage(t *testing.T) {
 
 	anyMsg := createMessageFixture()
 
-	var wg sync.WaitGroup
-	wg.Add(1)
-	r := outbox.NewReader(db, &fakePublisher{
-		onPublish: func(msg outbox.Message) {
-			assertMessageEqual(t, anyMsg, msg)
-			wg.Done() // Mark the message as processed
-		},
-	}, outbox.WithInterval(10*time.Millisecond))
-	r.Start()
 	w := outbox.NewWriter(db)
-
 	err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxExecFunc) error {
 		return nil
 	})
 	require.NoError(t, err)
 
-	wg.Wait()
+	r := outbox.NewReader(db, &fakePublisher{
+		onPublish: func(msg outbox.Message) {
+			assertMessageEqual(t, anyMsg, msg)
+		},
+	}, outbox.WithInterval(10*time.Millisecond))
+	r.Start()
 
 	require.Eventually(t, func() bool {
 		_, found := readOutboxMessage(t, anyMsg.ID)
 		return !found
 	}, 1*time.Second, 50*time.Millisecond)
+
 	r.Stop()
 }
 
