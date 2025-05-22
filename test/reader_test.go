@@ -110,17 +110,6 @@ func TestReaderOnDeleteError(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	onDeleteCallbackCalled := false
-	r := outbox.NewReader(db, &fakePublisher{
-		onPublish: func(_ outbox.Message) {
-			_, err := db.Exec("ALTER TABLE Outbox RENAME TO Outbox_old") // force an error on delete
-			require.NoError(t, err)
-		},
-	}, outbox.WithInterval(10*time.Millisecond), outbox.WithOnDeleteError(func(_ outbox.Message, err error) {
-		require.Error(t, err)
-		onDeleteCallbackCalled = true
-	}))
-	r.Start()
 	w := outbox.NewWriter(db)
 	anyMsg := createMessageFixture()
 
@@ -129,8 +118,17 @@ func TestReaderOnDeleteError(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	require.Eventually(t, func() bool {
-		return onDeleteCallbackCalled
-	}, 1*time.Second, 50*time.Millisecond)
+	var onDeleteCallbackCalled atomic.Bool
+	r := outbox.NewReader(db, &fakePublisher{
+		onPublish: func(_ outbox.Message) {
+			_, err := db.Exec("ALTER TABLE Outbox RENAME TO Outbox_old") // force an error on delete
+			require.NoError(t, err)
+		},
+	}, outbox.WithInterval(10*time.Millisecond), outbox.WithOnDeleteError(func(_ outbox.Message, err error) {
+		require.Error(t, err)
+		onDeleteCallbackCalled.Store(true)
+	}))
+	r.Start()
+	require.Eventually(t, onDeleteCallbackCalled.Load, 1*time.Second, 50*time.Millisecond)
 	r.Stop()
 }
