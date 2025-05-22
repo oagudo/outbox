@@ -13,12 +13,12 @@ stop:
 
 test: start
 	@echo "Running tests..."
-	go test -v ./...
+	go test -v -race ./...
 	@echo "Tests complete."
 
 test-coverage: start
 	@echo "Running tests with coverage..."
-	go test -v ./... -covermode=atomic -cover -coverpkg=./pkg/outbox -coverprofile=coverage.txt
+	go test -v -race ./... -covermode=atomic -cover -coverpkg=./pkg/outbox -coverprofile=coverage.txt
 	@echo "Coverage data written to coverage.txt"
 
 coverage-report:

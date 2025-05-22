@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -83,12 +84,12 @@ func TestWriterRollsBackOnCallbackError(t *testing.T) {
 
 type fakePublisher struct {
 	publishErr error
-	published  bool
+	published  atomic.Bool
 	onPublish  func(outbox.Message)
 }
 
 func (p *fakePublisher) Publish(_ context.Context, msg outbox.Message) error {
-	p.published = true
+	p.published.Store(true)
 	if p.onPublish != nil {
 		p.onPublish(msg)
 	}
@@ -108,7 +109,7 @@ func TestWriterWithOptimisticPublisher(t *testing.T) {
 
 		require.Eventually(t, func() bool {
 			_, found := readOutboxMessage(t, anyMsg.ID)
-			return publisher.published && !found
+			return publisher.published.Load() && !found
 		}, time.Second, 50*time.Millisecond)
 	})
 
@@ -123,7 +124,7 @@ func TestWriterWithOptimisticPublisher(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Eventually(t, func() bool {
-			return publisher.published
+			return publisher.published.Load()
 		}, time.Second, 50*time.Millisecond)
 
 		_, found := readOutboxMessage(t, anyMsg.ID)

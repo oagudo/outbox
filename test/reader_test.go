@@ -2,6 +2,8 @@ package test
 
 import (
 	"context"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,9 +16,12 @@ func TestReaderSuccessfullyPublishesMessage(t *testing.T) {
 
 	anyMsg := createMessageFixture()
 
+	var wg sync.WaitGroup
+	wg.Add(1)
 	r := outbox.NewReader(db, &fakePublisher{
 		onPublish: func(msg outbox.Message) {
 			assertMessageEqual(t, anyMsg, msg)
+			wg.Done() // Mark the message as processed
 		},
 	}, outbox.WithInterval(10*time.Millisecond))
 	r.Start()
@@ -26,6 +31,8 @@ func TestReaderSuccessfullyPublishesMessage(t *testing.T) {
 		return nil
 	})
 	require.NoError(t, err)
+
+	wg.Wait()
 
 	require.Eventually(t, func() bool {
 		_, found := readOutboxMessage(t, anyMsg.ID)
@@ -59,11 +66,12 @@ func TestReaderPublishesMessagesInOrder(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	nCalls := 0
+	var nCalls int32 = 0
 	r := outbox.NewReader(db, &fakePublisher{
 		onPublish: func(msg outbox.Message) {
-			require.Equal(t, msg.ID, msgs[nCalls].ID) // they are published in order
-			nCalls++
+			currentCalls := atomic.LoadInt32(&nCalls)
+			require.Equal(t, msg.ID, msgs[currentCalls].ID) // they are published in order
+			atomic.AddInt32(&nCalls, 1)
 		},
 	},
 		outbox.WithInterval(10*time.Millisecond),
@@ -72,7 +80,7 @@ func TestReaderPublishesMessagesInOrder(t *testing.T) {
 	r.Start()
 
 	require.Eventually(t, func() bool {
-		return nCalls == len(msgs)
+		return atomic.LoadInt32(&nCalls) == int32(len(msgs)) //nolint:gosec
 	}, 1*time.Second, 50*time.Millisecond)
 	r.Stop()
 }
@@ -87,17 +95,15 @@ func TestReaderOnReadError(t *testing.T) {
 	_, err := db.Exec("ALTER TABLE Outbox RENAME TO Outbox_old") // force an error on read
 	require.NoError(t, err)
 
-	onReadCallbackCalled := false
+	var onReadCallbackCalled atomic.Bool
 	r := outbox.NewReader(db, &fakePublisher{}, outbox.WithInterval(10*time.Millisecond),
 		outbox.WithOnReadError(func(err error) {
 			require.Error(t, err)
-			onReadCallbackCalled = true
+			onReadCallbackCalled.Store(true)
 		}))
 	r.Start()
 
-	require.Eventually(t, func() bool {
-		return onReadCallbackCalled
-	}, 1*time.Second, 50*time.Millisecond)
+	require.Eventually(t, onReadCallbackCalled.Load, 1*time.Second, 50*time.Millisecond)
 	r.Stop()
 }
 

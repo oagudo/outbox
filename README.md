@@ -8,7 +8,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/oagudo/outbox/v4.svg)](https://pkg.go.dev/github.com/oagudo/outbox)
 
 
-Simple library for [Transactional Outbox Pattern](https://microservices.io/patterns/data/transactional-outbox.html) in Go
+Simple library for [transactional outbox pattern](https://microservices.io/patterns/data/transactional-outbox.html) in Go
 
 ## Key Features
 
