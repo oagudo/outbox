@@ -238,7 +238,7 @@ func TestStopCancelsInProgressPublishing(t *testing.T) {
 	err = r.Stop(context.Background())
 	require.NoError(t, err)
 
-	count, err := countMessages()
+	count, err := countMessages(t)
 	require.NoError(t, err)
 	require.Greater(t, count, 0)
 }
@@ -259,7 +259,9 @@ func TestStartAndStopCalledMultipleTimes(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func countMessages() (int, error) {
+func countMessages(t *testing.T) (int, error) {
+	t.Helper()
+
 	var count int
 	err := db.QueryRow("SELECT COUNT(*) FROM Outbox").Scan(&count)
 	return count, err
