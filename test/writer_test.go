@@ -110,7 +110,7 @@ func TestWriterWithOptimisticPublisher(t *testing.T) {
 		require.Eventually(t, func() bool {
 			_, found := readOutboxMessage(t, anyMsg.ID)
 			return publisher.published.Load() && !found
-		}, time.Second, 50*time.Millisecond)
+		}, testTimeout, pollInterval)
 	})
 
 	t.Run("does not remove message from outbox if publisher returns an error", func(t *testing.T) {
@@ -125,7 +125,7 @@ func TestWriterWithOptimisticPublisher(t *testing.T) {
 
 		require.Eventually(t, func() bool {
 			return publisher.published.Load()
-		}, time.Second, 50*time.Millisecond)
+		}, testTimeout, pollInterval)
 
 		_, found := readOutboxMessage(t, anyMsg.ID)
 		require.True(t, found)
