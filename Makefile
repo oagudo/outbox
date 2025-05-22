@@ -1,4 +1,4 @@
-.PHONY: tests start stop lint
+.PHONY: tests start stop lint test-coverage coverage-report
 
 start:
 	@echo "Starting test dependencies with Docker Compose..."
@@ -12,6 +12,16 @@ test: start
 	@echo "Running tests..."
 	go test -v ./...
 	@echo "Tests complete."
+
+test-coverage: start
+	@echo "Running tests with coverage..."
+	go test -v ./... -cover -coverpkg=./pkg/outbox -coverprofile=coverage.out
+	@echo "Coverage data written to coverage.out"
+
+coverage-report:
+	@echo "Generating coverage report..."
+	go tool cover -html=coverage.out -o coverage.html
+	@echo "Coverage report generated at coverage.html"
 
 lint:
 	@echo "Running linters..."
