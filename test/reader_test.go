@@ -2,6 +2,7 @@ package test
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -175,6 +176,34 @@ func TestStopTimesOutIfReaderIsNotStopped(t *testing.T) {
 	err = r.Stop(ctx)
 	require.Error(t, err)
 	require.Equal(t, err, context.DeadlineExceeded)
+}
+
+func TestShouldKeepTryingToPublishMessagesAfterError(t *testing.T) {
+	err := truncateOutboxTable()
+	require.NoError(t, err)
+
+	w := outbox.NewWriter(db)
+	anyMsg := createMessageFixture()
+	err = w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxExecFunc) error {
+		return nil
+	})
+	require.NoError(t, err)
+
+	var onPublishCalls int32 = 0
+	r := outbox.NewReader(db, &fakePublisher{
+		onPublish: func(_ outbox.Message) {
+			atomic.AddInt32(&onPublishCalls, 1)
+		},
+		publishErr: errors.New("any error during publish"),
+	}, outbox.WithInterval(10*time.Millisecond))
+	r.Start()
+
+	require.Eventually(t, func() bool {
+		return atomic.LoadInt32(&onPublishCalls) > 1
+	}, 1*time.Second, 50*time.Millisecond)
+
+	err = r.Stop(context.Background())
+	require.NoError(t, err)
 }
 
 func TestStopCancelsInProgressPublishing(t *testing.T) {
