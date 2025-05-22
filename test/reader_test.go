@@ -211,18 +211,28 @@ func TestStopCancelsInProgressPublishing(t *testing.T) {
 	require.Greater(t, count, 0)
 }
 
-func TestStartAndStopCalledMultipleTimes(t *testing.T) {
+func TestMultipleStartCalls(t *testing.T) {
 	setupTest(t)
 
 	r := outbox.NewReader(db, &fakePublisher{})
 
 	r.Start()
-	r.Start() // should not panic
+	r.Start() // Second call to Start should be a no-op
+
+	err := r.Stop(context.Background())
+	require.NoError(t, err)
+}
+
+func TestMultipleStopCalls(t *testing.T) {
+	setupTest(t)
+
+	r := outbox.NewReader(db, &fakePublisher{})
+	r.Start()
 
 	err := r.Stop(context.Background())
 	require.NoError(t, err)
 
-	err = r.Stop(context.Background())
+	err = r.Stop(context.Background()) // Second call to Stop should be a no-op
 	require.NoError(t, err)
 }
 
