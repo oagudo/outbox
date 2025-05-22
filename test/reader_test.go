@@ -154,7 +154,7 @@ func TestStopTimesOutIfReaderIsNotStopped(t *testing.T) {
 
 	err := r.Stop(ctx)
 	require.Error(t, err)
-	require.Equal(t, err, context.DeadlineExceeded)
+	require.Equal(t, context.DeadlineExceeded, err)
 }
 
 func TestShouldKeepTryingToPublishMessagesAfterError(t *testing.T) {
