@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -34,9 +35,12 @@ type Reader struct {
 
 	interval    time.Duration
 	maxMessages int
-	started     int32
-	closed      int32
-	stop        chan struct{}
+
+	started int32
+	closed  int32
+	ctx     context.Context
+	cancel  context.CancelFunc
+	wg      sync.WaitGroup
 }
 
 // ReaderOption is a function that configures a Reader instance.
@@ -81,10 +85,13 @@ func noOpReadErrorFunc(error) {}
 // NewReader creates a new outbox Reader with the given database connection,
 // message publisher, and options.
 func NewReader(db *sql.DB, msgPublisher MessagePublisher, opts ...ReaderOption) *Reader {
+	ctx, cancel := context.WithCancel(context.Background())
+
 	r := &Reader{
 		db:           db,
 		msgPublisher: msgPublisher,
-		stop:         make(chan struct{}),
+		ctx:          ctx,
+		cancel:       cancel,
 
 		interval:    10 * time.Second,
 		maxMessages: 100,
@@ -108,29 +115,42 @@ func (r *Reader) Start() {
 		return
 	}
 
+	r.wg.Add(1)
 	go func() {
 		ticker := time.NewTicker(r.interval)
 		defer ticker.Stop()
+		defer r.wg.Done()
 
 		for {
 			select {
 			case <-ticker.C:
 				r.publishMessages()
-			case <-r.stop:
+			case <-r.ctx.Done():
 				return
 			}
 		}
 	}()
 }
 
-// Stop halts the background processing of outbox messages.
-// If Stop is called multiple times, only the first call has an effect.
-func (r *Reader) Stop() {
+func (r *Reader) Stop(ctx context.Context) error {
 	if !atomic.CompareAndSwapInt32(&r.closed, 0, 1) {
-		return
+		return nil
 	}
 
-	close(r.stop)
+	r.cancel() // signal stop
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		r.wg.Wait()
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (r *Reader) publishMessages() {
@@ -141,6 +161,10 @@ func (r *Reader) publishMessages() {
 	}
 
 	for _, msg := range msgs {
+		if r.ctx.Err() != nil {
+			return
+		}
+
 		err := r.msgPublisher.Publish(context.Background(), msg)
 		if err != nil {
 			continue

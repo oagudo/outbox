@@ -2,6 +2,7 @@ package test
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -11,12 +12,13 @@ import (
 )
 
 func TestReaderSuccessfullyPublishesMessage(t *testing.T) {
-	_ = truncateOutboxTable()
+	err := truncateOutboxTable()
+	require.NoError(t, err)
 
 	anyMsg := createMessageFixture()
 
 	w := outbox.NewWriter(db)
-	err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxExecFunc) error {
+	err = w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxExecFunc) error {
 		return nil
 	})
 	require.NoError(t, err)
@@ -33,11 +35,13 @@ func TestReaderSuccessfullyPublishesMessage(t *testing.T) {
 		return !found
 	}, 1*time.Second, 50*time.Millisecond)
 
-	r.Stop()
+	err = r.Stop(context.Background())
+	require.NoError(t, err)
 }
 
 func TestReaderPublishesMessagesInOrder(t *testing.T) {
-	_ = truncateOutboxTable()
+	err := truncateOutboxTable()
+	require.NoError(t, err)
 
 	firstMsg := createMessageFixture()
 
@@ -77,17 +81,20 @@ func TestReaderPublishesMessagesInOrder(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return atomic.LoadInt32(&onPublishCalls) == int32(len(msgs)) //nolint:gosec
 	}, 1*time.Second, 50*time.Millisecond)
-	r.Stop()
+
+	err = r.Stop(context.Background())
+	require.NoError(t, err)
 }
 
 func TestReaderOnReadError(t *testing.T) {
-	_ = truncateOutboxTable()
+	err := truncateOutboxTable()
+	require.NoError(t, err)
 
 	t.Cleanup(func() {
 		_, err := db.Exec("ALTER TABLE Outbox_old RENAME TO Outbox")
 		require.NoError(t, err)
 	})
-	_, err := db.Exec("ALTER TABLE Outbox RENAME TO Outbox_old") // force an error on read
+	_, err = db.Exec("ALTER TABLE Outbox RENAME TO Outbox_old") // force an error on read
 	require.NoError(t, err)
 
 	var onReadCallbackCalled atomic.Bool
@@ -99,11 +106,14 @@ func TestReaderOnReadError(t *testing.T) {
 	r.Start()
 
 	require.Eventually(t, onReadCallbackCalled.Load, 1*time.Second, 50*time.Millisecond)
-	r.Stop()
+
+	err = r.Stop(context.Background())
+	require.NoError(t, err)
 }
 
 func TestReaderOnDeleteError(t *testing.T) {
-	_ = truncateOutboxTable()
+	err := truncateOutboxTable()
+	require.NoError(t, err)
 
 	t.Cleanup(func() {
 		_, err := db.Exec("ALTER TABLE Outbox_old RENAME TO Outbox")
@@ -113,7 +123,7 @@ func TestReaderOnDeleteError(t *testing.T) {
 	w := outbox.NewWriter(db)
 	anyMsg := createMessageFixture()
 
-	err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxExecFunc) error {
+	err = w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxExecFunc) error {
 		return nil
 	})
 	require.NoError(t, err)
@@ -130,5 +140,98 @@ func TestReaderOnDeleteError(t *testing.T) {
 	}))
 	r.Start()
 	require.Eventually(t, onDeleteCallbackCalled.Load, 1*time.Second, 50*time.Millisecond)
-	r.Stop()
+
+	err = r.Stop(context.Background())
+	require.NoError(t, err)
+}
+
+func TestStopTimesOutIfReaderIsNotStopped(t *testing.T) {
+	err := truncateOutboxTable()
+	require.NoError(t, err)
+
+	w := outbox.NewWriter(db)
+	anyMsg := createMessageFixture()
+
+	err = w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxExecFunc) error {
+		return nil
+	})
+	require.NoError(t, err)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	r := outbox.NewReader(db, &fakePublisher{
+		onPublish: func(_ outbox.Message) {
+			wg.Done() // trigger for stop
+			time.Sleep(1 * time.Second)
+		},
+	}, outbox.WithInterval(10*time.Millisecond))
+	r.Start()
+
+	wg.Wait()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	err = r.Stop(ctx)
+	require.Error(t, err)
+	require.Equal(t, err, context.DeadlineExceeded)
+}
+
+func TestStopCancelsInProgressPublishing(t *testing.T) {
+	err := truncateOutboxTable()
+	require.NoError(t, err)
+
+	maxMessages := 100
+
+	w := outbox.NewWriter(db)
+	for range maxMessages {
+		err := w.Write(context.Background(), createMessageFixture(), func(_ context.Context, _ outbox.TxExecFunc) error {
+			return nil
+		})
+		require.NoError(t, err)
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	r := outbox.NewReader(db, &fakePublisher{
+		onPublish: func(_ outbox.Message) {
+			wg.Done() // trigger for stop
+			time.Sleep(1 * time.Millisecond)
+		},
+	},
+		outbox.WithInterval(10*time.Millisecond),
+		outbox.WithMaxMessages(maxMessages),
+	)
+	r.Start()
+
+	wg.Wait()
+
+	err = r.Stop(context.Background())
+	require.NoError(t, err)
+
+	count, err := countMessages()
+	require.NoError(t, err)
+	require.Greater(t, count, 0)
+}
+
+func TestStartAndStopCalledMultipleTimes(t *testing.T) {
+	err := truncateOutboxTable()
+	require.NoError(t, err)
+
+	r := outbox.NewReader(db, &fakePublisher{})
+
+	r.Start()
+	r.Start() // should not panic
+
+	err = r.Stop(context.Background())
+	require.NoError(t, err)
+
+	err = r.Stop(context.Background())
+	require.NoError(t, err)
+}
+
+func countMessages() (int, error) {
+	var count int
+	err := db.QueryRow("SELECT COUNT(*) FROM Outbox").Scan(&count)
+	return count, err
 }
