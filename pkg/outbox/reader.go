@@ -132,6 +132,14 @@ func (r *Reader) Start() {
 	}()
 }
 
+// Stop gracefully shuts down the outbox reader processing.
+// It prevents new reader cycles from starting and waits for any ongoing
+// message publishing to complete. The provided context controls how long to wait
+// for graceful shutdown before giving up.
+//
+// If the context expires before processing completes, Stop returns the context's
+// error. If shutdown completes successfully, it returns nil.
+// Calling Stop multiple times is safe and only the first call has an effect.
 func (r *Reader) Stop(ctx context.Context) error {
 	if !atomic.CompareAndSwapInt32(&r.closed, 0, 1) {
 		return nil
