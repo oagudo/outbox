@@ -119,7 +119,7 @@ func main() {
 		queue:   q.Name,
 	}, outbox.WithInterval(1*time.Second))
 	reader.Start()
-	defer reader.Stop()
+	defer reader.Stop(context.Background())
 
 	r := http.NewServeMux()
 

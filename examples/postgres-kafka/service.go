@@ -85,7 +85,7 @@ func main() {
 	writer := outbox.NewWriter(db)
 	reader := outbox.NewReader(db, &messagePublisher{kafkaWriter: kafkaWriter}, outbox.WithInterval(1*time.Second))
 	reader.Start()
-	defer reader.Stop()
+	defer reader.Stop(context.Background())
 	r := http.NewServeMux()
 
 	r.HandleFunc("/entity", func(w http.ResponseWriter, r *http.Request) {
