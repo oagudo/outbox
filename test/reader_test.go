@@ -158,7 +158,7 @@ func TestStopTimesOutIfReaderIsNotStopped(t *testing.T) {
 	r := outbox.NewReader(db, &fakePublisher{
 		onPublish: func(_ outbox.Message) {
 			wg.Done() // trigger for stop
-			time.Sleep(1 * time.Second)
+			time.Sleep(100 * time.Millisecond)
 		},
 	}, outbox.WithInterval(10*time.Millisecond))
 	r.Start()
