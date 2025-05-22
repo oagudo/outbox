@@ -85,7 +85,7 @@ reader := outbox.NewReader(
     outbox.WithInterval(5*time.Second), // Optional: Custom polling interval (default: 10s)
 )
 reader.Start()
-defer reader.Stop() // Stop during application shutdown
+defer reader.Stop(context.Background()) // Stop during application shutdown
 ```
 
 ### Database Setup
