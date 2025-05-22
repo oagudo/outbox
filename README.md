@@ -3,6 +3,7 @@
 [![Release](https://img.shields.io/github/release/oagudo/outbox.svg?style=flat-square)](https://github.com/oagudo/outbox/releases/latest)
 [![Software License](https://img.shields.io/badge/license-MIT-brightgreen.svg?style=flat-square)](LICENSE.md)
 ![GitHub Actions](https://github.com/oagudo/outbox/actions/workflows/ci.yml/badge.svg)
+[![codecov](https://codecov.io/gh/oagudo/outbox/graph/badge.svg?token=KH1GUAV4VR)](https://codecov.io/gh/oagudo/outbox)
 [![Go Report Card](https://goreportcard.com/badge/github.com/oagudo/outbox?style=flat-square)](https://goreportcard.com/report/github.com/oagudo/outbox)
 [![Go Reference](https://pkg.go.dev/badge/github.com/oagudo/outbox/v4.svg)](https://pkg.go.dev/github.com/oagudo/outbox)
 
