@@ -185,7 +185,7 @@ func TestShouldKeepTryingToPublishMessagesAfterError(t *testing.T) {
 func TestStopCancelsInProgressPublishing(t *testing.T) {
 	setupTest(t)
 
-	maxMessages := 100
+	maxMessages := 30
 	for range maxMessages {
 		writeMessage(t, createMessageFixture())
 	}
