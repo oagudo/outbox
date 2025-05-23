@@ -34,6 +34,7 @@ type Reader struct {
 	onReadErrorCallback   OnReadErrorFunc
 
 	interval    time.Duration
+	readTimeout time.Duration
 	maxMessages int
 
 	started int32
@@ -51,6 +52,14 @@ type ReaderOption func(*Reader)
 func WithInterval(interval time.Duration) ReaderOption {
 	return func(r *Reader) {
 		r.interval = interval
+	}
+}
+
+// WithReadTimeout sets the timeout for reading messages from the outbox.
+// Default is 5 seconds.
+func WithReadTimeout(timeout time.Duration) ReaderOption {
+	return func(r *Reader) {
+		r.readTimeout = timeout
 	}
 }
 
@@ -94,6 +103,7 @@ func NewReader(db *sql.DB, msgPublisher MessagePublisher, opts ...ReaderOption) 
 		cancel:       cancel,
 
 		interval:    10 * time.Second,
+		readTimeout: 5 * time.Second,
 		maxMessages: 100,
 
 		onDeleteErrorCallback: noOpMessageErrorFunc,
@@ -162,7 +172,7 @@ func (r *Reader) Stop(ctx context.Context) error {
 }
 
 func (r *Reader) publishMessages() {
-	msgs, err := readOutboxMessages(r.db, r.maxMessages)
+	msgs, err := r.readOutboxMessages()
 	if err != nil {
 		r.onReadErrorCallback(err)
 		return
@@ -187,10 +197,13 @@ func (r *Reader) publishMessages() {
 	}
 }
 
-func readOutboxMessages(db *sql.DB, limit int) ([]Message, error) {
+func (r *Reader) readOutboxMessages() ([]Message, error) {
+	ctx, cancel := context.WithTimeout(r.ctx, r.readTimeout)
+	defer cancel()
+
 	// nolint:gosec
 	query := fmt.Sprintf("SELECT id, payload, created_at, context FROM Outbox ORDER BY created_at ASC LIMIT %s", getSQLPlaceholder(1))
-	rows, err := db.Query(query, limit)
+	rows, err := r.db.QueryContext(ctx, query, r.maxMessages)
 	if err != nil {
 		return nil, err
 	}

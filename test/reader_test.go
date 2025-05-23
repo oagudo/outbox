@@ -159,6 +159,30 @@ func TestStopTimesOutIfReaderIsNotStopped(t *testing.T) {
 	require.Equal(t, context.DeadlineExceeded, err)
 }
 
+func TestShouldTimeoutWhenReadingMessagesTakesTooLong(t *testing.T) {
+	setupTest(t)
+
+	anyMsg := createMessageFixture()
+	writeMessage(t, anyMsg)
+
+	var onReadErrorCalls int32 = 0
+	r := outbox.NewReader(db, &fakePublisher{},
+		outbox.WithInterval(readerInterval),
+		outbox.WithReadTimeout(0), // context should be cancelled
+		outbox.WithOnReadError(func(err error) {
+			require.Equal(t, context.DeadlineExceeded, err)
+			atomic.AddInt32(&onReadErrorCalls, 1)
+		}))
+	r.Start()
+
+	require.Eventually(t, func() bool {
+		return atomic.LoadInt32(&onReadErrorCalls) > 0
+	}, testTimeout, pollInterval)
+
+	err := r.Stop(context.Background())
+	require.NoError(t, err)
+}
+
 func TestShouldKeepTryingToPublishMessagesAfterError(t *testing.T) {
 	setupTest(t)
 
