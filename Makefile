@@ -1,4 +1,4 @@
-.PHONY: all test start stop lint test-coverage coverage-report clean help
+.PHONY: all test start stop lint test-coverage coverage-report coverage-view release
 
 # Default target when just running `make`
 all: lint test
