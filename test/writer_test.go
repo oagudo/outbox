@@ -85,13 +85,16 @@ func TestWriterRollsBackOnCallbackError(t *testing.T) {
 type fakePublisher struct {
 	publishErr error
 	published  atomic.Bool
-	onPublish  func(outbox.Message)
+	onPublish  func(context.Context, outbox.Message)
 }
 
-func (p *fakePublisher) Publish(_ context.Context, msg outbox.Message) error {
+func (p *fakePublisher) Publish(ctx context.Context, msg outbox.Message) error {
 	p.published.Store(true)
 	if p.onPublish != nil {
-		p.onPublish(msg)
+		p.onPublish(ctx, msg)
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
 	}
 	return p.publishErr
 }

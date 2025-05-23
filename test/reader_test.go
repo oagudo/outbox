@@ -25,7 +25,7 @@ func TestReaderSuccessfullyPublishesMessage(t *testing.T) {
 	writeMessage(t, anyMsg)
 
 	r := outbox.NewReader(db, &fakePublisher{
-		onPublish: func(msg outbox.Message) {
+		onPublish: func(_ context.Context, msg outbox.Message) {
 			assertMessageEqual(t, anyMsg, msg)
 		},
 	}, outbox.WithInterval(readerInterval))
@@ -61,7 +61,7 @@ func TestReaderPublishesMessagesInOrder(t *testing.T) {
 
 	var onPublishCalls int32 = 0
 	r := outbox.NewReader(db, &fakePublisher{
-		onPublish: func(msg outbox.Message) {
+		onPublish: func(_ context.Context, msg outbox.Message) {
 			currentCalls := atomic.LoadInt32(&onPublishCalls)
 			require.Equal(t, msg.ID, msgs[currentCalls].ID) // they are published in order
 			atomic.AddInt32(&onPublishCalls, 1)
@@ -117,7 +117,7 @@ func TestReaderOnDeleteError(t *testing.T) {
 
 	var onDeleteCallbackCalled atomic.Bool
 	r := outbox.NewReader(db, &fakePublisher{
-		onPublish: func(_ outbox.Message) {
+		onPublish: func(_ context.Context, _ outbox.Message) {
 			_, err := db.Exec("ALTER TABLE Outbox RENAME TO Outbox_old") // force an error on delete
 			require.NoError(t, err)
 		},
@@ -142,7 +142,7 @@ func TestStopTimesOutIfReaderIsNotStopped(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	r := outbox.NewReader(db, &fakePublisher{
-		onPublish: func(_ outbox.Message) {
+		onPublish: func(_ context.Context, _ outbox.Message) {
 			wg.Done() // trigger for stop
 			time.Sleep(100 * time.Millisecond)
 		},
@@ -183,6 +183,32 @@ func TestShouldTimeoutWhenReadingMessagesTakesTooLong(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestShouldTimeoutWhenPublishingMessagesTakesTooLong(t *testing.T) {
+	setupTest(t)
+
+	anyMsg := createMessageFixture()
+	writeMessage(t, anyMsg)
+
+	var onPublishCalls int32 = 0
+	r := outbox.NewReader(db, &fakePublisher{
+		onPublish: func(ctx context.Context, _ outbox.Message) {
+			require.Equal(t, context.DeadlineExceeded, ctx.Err())
+			atomic.AddInt32(&onPublishCalls, 1)
+		},
+	},
+		outbox.WithInterval(readerInterval),
+		outbox.WithPublishTimeout(0), // context should be cancelled
+	)
+	r.Start()
+
+	require.Eventually(t, func() bool {
+		return atomic.LoadInt32(&onPublishCalls) > 0
+	}, testTimeout, pollInterval)
+
+	err := r.Stop(context.Background())
+	require.NoError(t, err)
+}
+
 func TestShouldKeepTryingToPublishMessagesAfterError(t *testing.T) {
 	setupTest(t)
 
@@ -191,7 +217,7 @@ func TestShouldKeepTryingToPublishMessagesAfterError(t *testing.T) {
 
 	var onPublishCalls int32 = 0
 	r := outbox.NewReader(db, &fakePublisher{
-		onPublish: func(_ outbox.Message) {
+		onPublish: func(_ context.Context, _ outbox.Message) {
 			atomic.AddInt32(&onPublishCalls, 1)
 		},
 		publishErr: errors.New("any error during publish"),
@@ -217,7 +243,7 @@ func TestStopCancelsInProgressPublishing(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	r := outbox.NewReader(db, &fakePublisher{
-		onPublish: func(_ outbox.Message) {
+		onPublish: func(_ context.Context, _ outbox.Message) {
 			wg.Done() // trigger for stop
 			time.Sleep(1 * time.Millisecond)
 		},

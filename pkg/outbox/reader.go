@@ -33,9 +33,10 @@ type Reader struct {
 	onDeleteErrorCallback OnMessageErrorFunc
 	onReadErrorCallback   OnReadErrorFunc
 
-	interval    time.Duration
-	readTimeout time.Duration
-	maxMessages int
+	interval       time.Duration
+	readTimeout    time.Duration
+	publishTimeout time.Duration
+	maxMessages    int
 
 	started int32
 	closed  int32
@@ -60,6 +61,14 @@ func WithInterval(interval time.Duration) ReaderOption {
 func WithReadTimeout(timeout time.Duration) ReaderOption {
 	return func(r *Reader) {
 		r.readTimeout = timeout
+	}
+}
+
+// WithPublishTimeout sets the timeout for publishing messages to the external system.
+// Default is 5 seconds.
+func WithPublishTimeout(timeout time.Duration) ReaderOption {
+	return func(r *Reader) {
+		r.publishTimeout = timeout
 	}
 }
 
@@ -102,9 +111,10 @@ func NewReader(db *sql.DB, msgPublisher MessagePublisher, opts ...ReaderOption) 
 		ctx:          ctx,
 		cancel:       cancel,
 
-		interval:    10 * time.Second,
-		readTimeout: 5 * time.Second,
-		maxMessages: 100,
+		interval:       10 * time.Second,
+		readTimeout:    5 * time.Second,
+		publishTimeout: 5 * time.Second,
+		maxMessages:    100,
 
 		onDeleteErrorCallback: noOpMessageErrorFunc,
 		onReadErrorCallback:   noOpReadErrorFunc,
@@ -183,7 +193,10 @@ func (r *Reader) publishMessages() {
 			return
 		}
 
-		err := r.msgPublisher.Publish(context.Background(), msg)
+		ctx, cancel := context.WithTimeout(r.ctx, r.publishTimeout)
+		defer cancel()
+
+		err := r.msgPublisher.Publish(ctx, msg)
 		if err != nil {
 			continue
 		}
