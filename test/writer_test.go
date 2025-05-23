@@ -83,13 +83,13 @@ func TestWriterRollsBackOnCallbackError(t *testing.T) {
 }
 
 type fakePublisher struct {
-	publishErr error
-	published  atomic.Bool
-	onPublish  func(context.Context, outbox.Message)
+	publishErr    error
+	publishCalled atomic.Bool
+	onPublish     func(context.Context, outbox.Message)
 }
 
 func (p *fakePublisher) Publish(ctx context.Context, msg outbox.Message) error {
-	p.published.Store(true)
+	p.publishCalled.Store(true)
 	if p.onPublish != nil {
 		p.onPublish(ctx, msg)
 	}
@@ -112,7 +112,7 @@ func TestWriterWithOptimisticPublisher(t *testing.T) {
 
 		require.Eventually(t, func() bool {
 			_, found := readOutboxMessage(t, anyMsg.ID)
-			return publisher.published.Load() && !found
+			return publisher.publishCalled.Load() && !found
 		}, testTimeout, pollInterval)
 	})
 
@@ -127,7 +127,28 @@ func TestWriterWithOptimisticPublisher(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Eventually(t, func() bool {
-			return publisher.published.Load()
+			return publisher.publishCalled.Load()
+		}, testTimeout, pollInterval)
+
+		_, found := readOutboxMessage(t, anyMsg.ID)
+		require.True(t, found)
+	})
+
+	t.Run("does not remove message from outbox if optimistic publishing takes too long", func(t *testing.T) {
+		publisher := &fakePublisher{}
+		w := outbox.NewWriter(db,
+			outbox.WithOptimisticPublisher(publisher),
+			outbox.WithOptimisticTimeout(0), // context should be cancelled
+		)
+
+		anyMsg := createMessageFixture()
+		err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxExecFunc) error {
+			return nil
+		})
+		require.NoError(t, err)
+
+		require.Eventually(t, func() bool {
+			return publisher.publishCalled.Load()
 		}, testTimeout, pollInterval)
 
 		_, found := readOutboxMessage(t, anyMsg.ID)

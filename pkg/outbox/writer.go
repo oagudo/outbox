@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	coreSql "github.com/oagudo/outbox/internal/sql"
 )
@@ -14,6 +15,8 @@ import (
 type Writer struct {
 	sqlExecutor  coreSql.Executor
 	msgPublisher MessagePublisher
+
+	optimisticTimeout time.Duration
 }
 
 // TxExecFunc is a function that executes a SQL query within a transaction.
@@ -30,16 +33,28 @@ type WriterOption func(*Writer)
 // of messages after the transaction is committed.
 // This can improve performance by reducing the delay between transaction commit
 // and message publishing, while still ensuring consistency if publishing fails.
+//
+// Note: optimistic path is just an efficiency optimization, not something the system
+// depends on for correctness. If the message is not published, it will be retried by the reader.
 func WithOptimisticPublisher(msgPublisher MessagePublisher) WriterOption {
 	return func(w *Writer) {
 		w.msgPublisher = msgPublisher
 	}
 }
 
+// WithOptimisticTimeout sets the timeout for optimistic publishing and deleting messages.
+// Default is 10 seconds.
+func WithOptimisticTimeout(timeout time.Duration) WriterOption {
+	return func(w *Writer) {
+		w.optimisticTimeout = timeout
+	}
+}
+
 // NewWriter creates a new outbox Writer with the given database connection and options.
 func NewWriter(db *sql.DB, opts ...WriterOption) *Writer {
 	w := &Writer{
-		sqlExecutor: &coreSql.DBAdapter{DB: db},
+		sqlExecutor:       &coreSql.DBAdapter{DB: db},
+		optimisticTimeout: 10 * time.Second,
 	}
 
 	for _, opt := range opts {
@@ -84,14 +99,17 @@ func (w *Writer) Write(ctx context.Context, msg Message, writerTxFunc WriterTxFu
 	txCommitted = err == nil
 
 	if txCommitted && w.msgPublisher != nil {
-		ctxWithoutCancel := context.WithoutCancel(ctx)
-		go w.publishMessage(ctxWithoutCancel, msg) // optimistically publish the message
+		ctxWithoutCancel := context.WithoutCancel(ctx) // optimistic path is async, so we don't want to cancel the context
+		go w.publishMessage(ctxWithoutCancel, msg)
 	}
 
 	return err
 }
 
 func (w *Writer) publishMessage(ctx context.Context, msg Message) {
+	ctx, cancel := context.WithTimeout(ctx, w.optimisticTimeout)
+	defer cancel()
+
 	err := w.msgPublisher.Publish(ctx, msg)
 	if err == nil {
 		query := fmt.Sprintf("DELETE FROM Outbox WHERE id = %s", getSQLPlaceholder(1))
