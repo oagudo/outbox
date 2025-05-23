@@ -199,24 +199,33 @@ func (r *Reader) publishMessages() {
 	}
 
 	for _, msg := range msgs {
-		publishCtx, publishCancel := context.WithTimeout(r.ctx, r.publishTimeout)
-		defer publishCancel()
-
-		err := r.msgPublisher.Publish(publishCtx, msg)
+		err := r.publishMessage(msg)
 		if err != nil {
 			continue
 		}
 
-		deleteCtx, deleteCancel := context.WithTimeout(r.ctx, r.deleteTimeout)
-		defer deleteCancel()
-
-		// nolint:gosec
-		query := fmt.Sprintf("DELETE FROM Outbox WHERE id = %s", getSQLPlaceholder(1))
-		_, err = r.db.ExecContext(deleteCtx, query, msg.ID)
+		err = r.deleteMessage(msg)
 		if err != nil {
 			r.onDeleteErrorCallback(msg, err)
 		}
 	}
+}
+
+func (r *Reader) publishMessage(msg Message) error {
+	publishCtx, publishCancel := context.WithTimeout(r.ctx, r.publishTimeout)
+	defer publishCancel()
+
+	return r.msgPublisher.Publish(publishCtx, msg)
+}
+
+func (r *Reader) deleteMessage(msg Message) error {
+	deleteCtx, deleteCancel := context.WithTimeout(r.ctx, r.deleteTimeout)
+	defer deleteCancel()
+
+	// nolint:gosec
+	query := fmt.Sprintf("DELETE FROM Outbox WHERE id = %s", getSQLPlaceholder(1))
+	_, err := r.db.ExecContext(deleteCtx, query, msg.ID)
+	return err
 }
 
 func (r *Reader) readOutboxMessages() ([]Message, error) {
