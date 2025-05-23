@@ -212,19 +212,19 @@ func (r *Reader) publishMessages() {
 }
 
 func (r *Reader) publishMessage(msg Message) error {
-	publishCtx, publishCancel := context.WithTimeout(r.ctx, r.publishTimeout)
-	defer publishCancel()
+	ctx, cancel := context.WithTimeout(r.ctx, r.publishTimeout)
+	defer cancel()
 
-	return r.msgPublisher.Publish(publishCtx, msg)
+	return r.msgPublisher.Publish(ctx, msg)
 }
 
 func (r *Reader) deleteMessage(msg Message) error {
-	deleteCtx, deleteCancel := context.WithTimeout(r.ctx, r.deleteTimeout)
-	defer deleteCancel()
+	ctx, cancel := context.WithTimeout(r.ctx, r.deleteTimeout)
+	defer cancel()
 
 	// nolint:gosec
 	query := fmt.Sprintf("DELETE FROM Outbox WHERE id = %s", getSQLPlaceholder(1))
-	_, err := r.db.ExecContext(deleteCtx, query, msg.ID)
+	_, err := r.db.ExecContext(ctx, query, msg.ID)
 	return err
 }
 
