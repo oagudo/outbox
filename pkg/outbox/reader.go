@@ -36,6 +36,7 @@ type Reader struct {
 	interval       time.Duration
 	readTimeout    time.Duration
 	publishTimeout time.Duration
+	deleteTimeout  time.Duration
 	maxMessages    int
 
 	started int32
@@ -69,6 +70,14 @@ func WithReadTimeout(timeout time.Duration) ReaderOption {
 func WithPublishTimeout(timeout time.Duration) ReaderOption {
 	return func(r *Reader) {
 		r.publishTimeout = timeout
+	}
+}
+
+// WithDeleteTimeout sets the timeout for deleting messages from the outbox.
+// Default is 5 seconds.
+func WithDeleteTimeout(timeout time.Duration) ReaderOption {
+	return func(r *Reader) {
+		r.deleteTimeout = timeout
 	}
 }
 
@@ -114,6 +123,7 @@ func NewReader(db *sql.DB, msgPublisher MessagePublisher, opts ...ReaderOption) 
 		interval:       10 * time.Second,
 		readTimeout:    5 * time.Second,
 		publishTimeout: 5 * time.Second,
+		deleteTimeout:  5 * time.Second,
 		maxMessages:    100,
 
 		onDeleteErrorCallback: noOpMessageErrorFunc,
@@ -189,21 +199,20 @@ func (r *Reader) publishMessages() {
 	}
 
 	for _, msg := range msgs {
-		if r.ctx.Err() != nil {
-			return
-		}
+		publishCtx, publishCancel := context.WithTimeout(r.ctx, r.publishTimeout)
+		defer publishCancel()
 
-		ctx, cancel := context.WithTimeout(r.ctx, r.publishTimeout)
-		defer cancel()
-
-		err := r.msgPublisher.Publish(ctx, msg)
+		err := r.msgPublisher.Publish(publishCtx, msg)
 		if err != nil {
 			continue
 		}
 
+		deleteCtx, deleteCancel := context.WithTimeout(r.ctx, r.deleteTimeout)
+		defer deleteCancel()
+
 		// nolint:gosec
 		query := fmt.Sprintf("DELETE FROM Outbox WHERE id = %s", getSQLPlaceholder(1))
-		_, err = r.db.Exec(query, msg.ID)
+		_, err = r.db.ExecContext(deleteCtx, query, msg.ID)
 		if err != nil {
 			r.onDeleteErrorCallback(msg, err)
 		}

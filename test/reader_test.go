@@ -209,6 +209,31 @@ func TestShouldTimeoutWhenPublishingMessagesTakesTooLong(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestShouldTimeoutWhenDeletingMessagesTakesTooLong(t *testing.T) {
+	setupTest(t)
+
+	anyMsg := createMessageFixture()
+	writeMessage(t, anyMsg)
+
+	var onDeleteErrorCalls int32 = 0
+	r := outbox.NewReader(db, &fakePublisher{},
+		outbox.WithInterval(readerInterval),
+		outbox.WithOnDeleteError(func(_ outbox.Message, err error) {
+			require.Equal(t, context.DeadlineExceeded, err)
+			atomic.AddInt32(&onDeleteErrorCalls, 1)
+		}),
+		outbox.WithDeleteTimeout(0), // context should be cancelled
+	)
+	r.Start()
+
+	require.Eventually(t, func() bool {
+		return atomic.LoadInt32(&onDeleteErrorCalls) > 0
+	}, testTimeout, pollInterval)
+
+	err := r.Stop(context.Background())
+	require.NoError(t, err)
+}
+
 func TestShouldKeepTryingToPublishMessagesAfterError(t *testing.T) {
 	setupTest(t)
 
@@ -240,11 +265,10 @@ func TestStopCancelsInProgressPublishing(t *testing.T) {
 		writeMessage(t, createMessageFixture())
 	}
 
-	var wg sync.WaitGroup
-	wg.Add(1)
+	var onPublishCalls int32 = 0
 	r := outbox.NewReader(db, &fakePublisher{
 		onPublish: func(_ context.Context, _ outbox.Message) {
-			wg.Done() // trigger for stop
+			atomic.AddInt32(&onPublishCalls, 1)
 			time.Sleep(1 * time.Millisecond)
 		},
 	},
@@ -253,7 +277,9 @@ func TestStopCancelsInProgressPublishing(t *testing.T) {
 	)
 	r.Start()
 
-	wg.Wait()
+	require.Eventually(t, func() bool {
+		return atomic.LoadInt32(&onPublishCalls) > 0
+	}, testTimeout, pollInterval)
 
 	err := r.Stop(context.Background())
 	require.NoError(t, err)
