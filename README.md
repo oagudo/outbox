@@ -7,7 +7,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/oagudo/outbox?style=flat-square)](https://goreportcard.com/report/github.com/oagudo/outbox)
 [![Go Reference](https://pkg.go.dev/badge/github.com/oagudo/outbox/v4.svg)](https://pkg.go.dev/github.com/oagudo/outbox)
 
-Lightweight library for the [transactional outbox pattern](https://microservices.io/patterns/data/transactional-outbox.html) in Go, not tied to any specific database or broker.
+Lightweight library for the [transactional outbox pattern](https://microservices.io/patterns/data/transactional-outbox.html) in Go, not tied to any specific relational database or broker.
 
 ## Key Features
 
