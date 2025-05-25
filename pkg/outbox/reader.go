@@ -224,7 +224,7 @@ func (r *Reader) deleteMessage(msg Message) error {
 
 	// nolint:gosec
 	query := fmt.Sprintf("DELETE FROM Outbox WHERE id = %s", getSQLPlaceholder(1))
-	_, err := r.db.ExecContext(ctx, query, msg.ID)
+	_, err := r.db.ExecContext(ctx, query, formatMessageIDForDB(msg))
 	return err
 }
 
@@ -233,7 +233,7 @@ func (r *Reader) readOutboxMessages() ([]Message, error) {
 	defer cancel()
 
 	// nolint:gosec
-	query := fmt.Sprintf("SELECT id, payload, created_at, context FROM Outbox ORDER BY created_at ASC LIMIT %s", getSQLPlaceholder(1))
+	query := buildSelectMessagesQuery()
 	rows, err := r.db.QueryContext(ctx, query, r.maxMessages)
 	if err != nil {
 		return nil, err
@@ -254,4 +254,16 @@ func (r *Reader) readOutboxMessages() ([]Message, error) {
 		return nil, err
 	}
 	return messages, nil
+}
+
+func buildSelectMessagesQuery() string {
+	limitPlaceholder := getSQLPlaceholder(1)
+
+	switch o.dbDriver {
+	case DriverOracle:
+		return fmt.Sprintf("SELECT id, payload, created_at, context FROM Outbox ORDER BY created_at ASC FETCH FIRST %s ROWS ONLY", limitPlaceholder)
+
+	default:
+		return fmt.Sprintf("SELECT id, payload, created_at, context FROM Outbox ORDER BY created_at ASC LIMIT %s", limitPlaceholder)
+	}
 }

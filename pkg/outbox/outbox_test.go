@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -56,6 +57,55 @@ func TestGetSQLPlaceholder(t *testing.T) {
 
 			got := getSQLPlaceholder(tt.index)
 			assert.Equal(t, tt.wantPlaceholder, got)
+		})
+	}
+}
+
+func TestGetIDType(t *testing.T) {
+	testUUID := uuid.New()
+	testMessage := Message{ID: testUUID}
+
+	tests := []struct {
+		driver   DriverType
+		wantType any
+	}{
+		{
+			driver:   DriverMySQL,
+			wantType: testUUID[:],
+		},
+		{
+			driver:   DriverMariaDB,
+			wantType: testUUID[:],
+		},
+		{
+			driver:   DriverOracle,
+			wantType: testUUID[:],
+		},
+		{
+			driver:   DriverPostgres,
+			wantType: testUUID,
+		},
+		{
+			driver:   DriverSQLServer,
+			wantType: testUUID,
+		},
+		{
+			driver:   DriverSQLite,
+			wantType: testUUID.String(),
+		},
+		{
+			driver:   DriverType("unknown"),
+			wantType: testUUID.String(), // default to string
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("driver %s", tt.driver), func(t *testing.T) {
+			SetDriver(tt.driver)
+
+			got := formatMessageIDForDB(testMessage)
+
+			assert.Equal(t, tt.wantType, got)
 		})
 	}
 }

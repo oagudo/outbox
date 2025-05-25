@@ -58,7 +58,7 @@ services:
       retries: 10
       
   kafka-init:
-    image: confluentinc/cp-kafka:7.5.0
+    image: confluentinc/cp-kafka:7.4.0
     depends_on:
       kafka:
         condition: service_healthy

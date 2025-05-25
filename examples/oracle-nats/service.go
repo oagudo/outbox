@@ -11,17 +11,17 @@ import (
 	"syscall"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
+	"github.com/nats-io/nats.go"
 	"github.com/oagudo/outbox/pkg/outbox"
-	amqp "github.com/rabbitmq/amqp091-go"
+	_ "github.com/sijms/go-ora/v2"
 )
 
-type rabbitHeaderKey string
+type natsHeaderKey string
 
 const (
-	rabbitTraceIDHeaderKey       rabbitHeaderKey = "trace_id"
-	rabbitCorrelationIDHeaderKey rabbitHeaderKey = "correlation_id"
+	natsTraceIDHeaderKey       natsHeaderKey = "trace_id"
+	natsCorrelationIDHeaderKey natsHeaderKey = "correlation_id"
 )
 
 type Entity struct {
@@ -33,9 +33,7 @@ type CreateEntityRequest struct {
 }
 
 type messagePublisher struct {
-	conn    *amqp.Connection
-	channel *amqp.Channel
-	queue   string
+	natsConn *nats.Conn
 }
 
 func (p *messagePublisher) Publish(ctx context.Context, msg outbox.Message) error {
@@ -45,82 +43,54 @@ func (p *messagePublisher) Publish(ctx context.Context, msg outbox.Message) erro
 		return err
 	}
 
-	headers := amqp.Table{}
-	for k, v := range msgContext {
-		headers[k] = v
+	// Create NATS message with headers
+	natsMsg := &nats.Msg{
+		Subject: "entity",
+		Data:    msg.Payload,
+		Header:  make(nats.Header),
 	}
 
-	err := p.channel.PublishWithContext(
-		ctx,
-		"",      // exchange
-		p.queue, // routing key
-		false,   // mandatory
-		false,   // immediate
-		amqp.Publishing{
-			ContentType:  "application/json",
-			Body:         msg.Payload,
-			MessageId:    msg.ID.String(),
-			Headers:      headers,
-			DeliveryMode: amqp.Persistent,
-		},
-	)
+	// Add message ID as a header
+	natsMsg.Header.Set("message_id", msg.ID.String())
+
+	// Add context as headers
+	for k, v := range msgContext {
+		natsMsg.Header.Set(k, v)
+	}
+
+	err := p.natsConn.PublishMsg(natsMsg)
 	if err != nil {
 		log.Printf("failed to publish message: %v", err)
 		return err
 	}
 
-	log.Printf("published message %s with content %s and headers %v", msg.ID, string(msg.Payload), string(msg.Context))
+	log.Printf("published message %s with content %s and headers %s", msg.ID, string(msg.Payload), string(msg.Context))
 
 	return nil
 }
 
 func main() {
 
-	// MySQL setup
-	dsn := "user:password@tcp(localhost:3306)/outbox?parseTime=true"
-	db, err := sql.Open("mysql", dsn)
+	// Oracle setup
+	db, err := sql.Open("oracle", "oracle://app_user:pass@localhost:1521/FREEPDB1")
 	if err != nil {
-		log.Fatalf("failed to connect to mysql: %v", err)
+		log.Fatalf("failed to connect to oracle: %v", err)
 	}
 	defer db.Close()
 
-	// RabbitMQ setup
-	conn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
+	// NATS setup
+	natsConn, err := nats.Connect("nats://localhost:4222")
 	if err != nil {
-		log.Fatalf("failed to connect to RabbitMQ: %v", err)
+		log.Fatalf("failed to connect to NATS: %v", err)
 	}
-	defer conn.Close()
-
-	channel, err := conn.Channel()
-	if err != nil {
-		log.Fatalf("failed to open a channel: %v", err)
-	}
-	defer channel.Close()
-
-	// Declare queue
-	q, err := channel.QueueDeclare(
-		"entity", // name
-		true,     // durable
-		false,    // delete when unused
-		false,    // exclusive
-		false,    // no-wait
-		nil,      // arguments
-	)
-	if err != nil {
-		log.Fatalf("failed to declare a queue: %v", err)
-	}
+	defer natsConn.Close()
 
 	// Outbox setup
-	outbox.SetDriver(outbox.DriverMySQL)
+	outbox.SetDriver(outbox.DriverOracle)
 	writer := outbox.NewWriter(db)
-	reader := outbox.NewReader(db, &messagePublisher{
-		conn:    conn,
-		channel: channel,
-		queue:   q.Name,
-	}, outbox.WithInterval(1*time.Second))
+	reader := outbox.NewReader(db, &messagePublisher{natsConn: natsConn}, outbox.WithInterval(1*time.Second))
 	reader.Start()
 	defer reader.Stop(context.Background())
-
 	r := http.NewServeMux()
 
 	r.HandleFunc("/entity", func(w http.ResponseWriter, r *http.Request) {
@@ -145,8 +115,8 @@ func main() {
 		}
 
 		msgContext := map[string]string{
-			string(rabbitTraceIDHeaderKey):       uuid.New().String(), // Add any context you need to the message (eg. trace_id, correlation_id, etc)
-			string(rabbitCorrelationIDHeaderKey): uuid.New().String(),
+			string(natsTraceIDHeaderKey):       uuid.New().String(), // Add any context you need to the message (eg. trace_id, correlation_id, etc)
+			string(natsCorrelationIDHeaderKey): uuid.New().String(),
 		}
 		msgContextJSON, err := json.Marshal(msgContext)
 		if err != nil {
@@ -160,10 +130,12 @@ func main() {
 			Context:   msgContextJSON,
 		}
 		err = writer.Write(r.Context(), msg, func(ctx context.Context, txExecFunc outbox.TxExecFunc) error {
-			return txExecFunc(r.Context(),
-				"INSERT INTO Entity (id, created_at) VALUES (?, ?)",
+			err := txExecFunc(r.Context(),
+				"INSERT INTO Entity (id, created_at) VALUES (:1, :2)",
 				entity.ID[:], entity.CreatedAt,
 			)
+
+			return err
 		})
 		if err != nil {
 			http.Error(w, "failed to write entity", http.StatusInternalServerError)

@@ -102,6 +102,26 @@ CREATE TABLE IF NOT EXISTS Outbox (
 );
 
 CREATE INDEX IF NOT EXISTS idx_outbox_created_at ON Outbox (created_at);
+
+-- Example for Oracle
+CREATE TABLE Outbox (
+    id RAW(16) PRIMARY KEY,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL,
+    context BLOB NOT NULL,
+    payload BLOB NOT NULL
+);
+
+CREATE INDEX idx_outbox_created_at ON Outbox (created_at);
+
+-- Example for MySQL
+CREATE TABLE IF NOT EXISTS Outbox (
+    id BINARY(16) PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    context BLOB NOT NULL,
+    payload BLOB NOT NULL
+);
+
+CREATE INDEX idx_outbox_created_at ON Outbox (created_at);
 ```
 
 ## Examples
@@ -109,12 +129,13 @@ CREATE INDEX IF NOT EXISTS idx_outbox_created_at ON Outbox (created_at);
 Complete working examples for different databases and message brokers:
 
 - [Postgres & Kafka](./examples/postgres-kafka/service.go) 
+- [Oracle & NATS](./examples/oracle-nats/service.go) 
 - [MySQL & RabbitMQ](./examples/mysql-rabitmq/service.go) 
 
 To run them:
 
 ```bash
-cd examples/mysql-rabitmq # or examples/postgres-kafka
+cd examples/postgres-kafka # or examples/oracle-nats or examples/mysql-rabitmq
 ../../scripts/up-and-wait.sh
 go run service.go
 

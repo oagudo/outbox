@@ -90,7 +90,7 @@ func (w *Writer) Write(ctx context.Context, msg Message, writerTxFunc WriterTxFu
 
 	query := fmt.Sprintf("INSERT INTO Outbox (id, created_at, context, payload) VALUES (%s, %s, %s, %s)",
 		getSQLPlaceholder(1), getSQLPlaceholder(2), getSQLPlaceholder(3), getSQLPlaceholder(4))
-	err = tx.ExecContext(ctx, query, msg.ID, msg.CreatedAt, msg.Context, msg.Payload)
+	err = tx.ExecContext(ctx, query, formatMessageIDForDB(msg), msg.CreatedAt, msg.Context, msg.Payload)
 	if err != nil {
 		return err
 	}
@@ -113,6 +113,6 @@ func (w *Writer) publishMessage(ctx context.Context, msg Message) {
 	err := w.msgPublisher.Publish(ctx, msg)
 	if err == nil {
 		query := fmt.Sprintf("DELETE FROM Outbox WHERE id = %s", getSQLPlaceholder(1))
-		_ = w.sqlExecutor.ExecContext(ctx, query, msg.ID)
+		_ = w.sqlExecutor.ExecContext(ctx, query, formatMessageIDForDB(msg))
 	}
 }

@@ -52,7 +52,19 @@ func (o *outbox) setDriver(driver DriverType) {
 	o.dbDriver = driver
 }
 
-func getSQLPlaceholder(index int) string {
+func formatMessageIDForDB(msg Message) any {
+	switch o.dbDriver {
+	case DriverMySQL, DriverMariaDB, DriverOracle:
+		bytes, _ := msg.ID.MarshalBinary() // Convert UUID to binary for better storage
+		return bytes
+	case DriverPostgres, DriverSQLServer:
+		return msg.ID // Native support
+	default:
+		return msg.ID.String()
+	}
+}
+
+func getSQLPlaceholder(index int) string { // TODO: extract query logic to SQL Dialect interface
 	switch o.dbDriver {
 	case DriverPostgres:
 		return fmt.Sprintf("$%d", index)

@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  oracle:
+    image: gvenzl/oracle-free:23-slim
+    container_name: outbox_example_oracle
+    environment:
+      ORACLE_PASSWORD: oracle
+    ports:
+      - "1521:1521"
+    volumes:
+      - ./init-scripts:/container-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  nats:
+    image: nats:2.10-alpine
+    container_name: outbox_example_nats
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+      - "6222:6222"
+    command: 
+      - "--http_port=8222"
+      - "--js"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8222/varz"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
