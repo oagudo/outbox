@@ -91,7 +91,7 @@ defer reader.Stop(context.Background()) // Stop during application shutdown
 
 #### 1. Choose Your Database Dialect
 
-The library supports multiple relational databases. By default, PostgreSQL dialect is used. If your database requires a different dialect, configure the appropriate during initialization. Available dialects are PostgreSQL, MySQL, MariaDB, SQLite, Oracle and SQL Server.
+The library supports multiple relational databases. By default, PostgreSQL dialect is used. If your database requires a different dialect, configure the appropriate during initialization. Supported dialects are PostgreSQL, MySQL, MariaDB, SQLite, Oracle and SQL Server.
 
 ```go
 // Example changing dialect to MySQL
