@@ -111,7 +111,7 @@ func main() {
 	}
 
 	// Outbox setup
-	outbox.SetDriver(outbox.DriverMySQL)
+	outbox.SetSQLDialect(outbox.MySQLDialect)
 	writer := outbox.NewWriter(db)
 	reader := outbox.NewReader(db, &messagePublisher{
 		conn:    conn,

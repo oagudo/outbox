@@ -259,8 +259,8 @@ func (r *Reader) readOutboxMessages() ([]Message, error) {
 func buildSelectMessagesQuery() string {
 	limitPlaceholder := getSQLPlaceholder(1)
 
-	switch o.dbDriver {
-	case DriverOracle:
+	switch o.dbDialect {
+	case OracleDialect:
 		return fmt.Sprintf("SELECT id, payload, created_at, context FROM Outbox ORDER BY created_at ASC FETCH FIRST %s ROWS ONLY", limitPlaceholder)
 
 	default:

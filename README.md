@@ -31,7 +31,7 @@ The Writer ensures your entity and outbox message are stored together atomically
 ```go
 // Setup database connection
 db, _ := sql.Open("pgx", "postgres://user:password@localhost:5432/outbox?sslmode=disable")
-// outbox.SetDriver(outbox.DriverMySQL) Optional: only for non-PostgreSQL databases (MySQL, etc.)
+// outbox.SetSQLDialect(outbox.MySQLDialect) Optional: only for non-PostgreSQL databases (MySQL, etc.)
 
 // Create a writer instance
 writer := outbox.NewWriter(db)

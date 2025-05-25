@@ -86,7 +86,7 @@ func main() {
 	defer natsConn.Close()
 
 	// Outbox setup
-	outbox.SetDriver(outbox.DriverOracle)
+	outbox.SetSQLDialect(outbox.OracleDialect)
 	writer := outbox.NewWriter(db)
 	reader := outbox.NewReader(db, &messagePublisher{natsConn: natsConn}, outbox.WithInterval(1*time.Second))
 	reader.Start()

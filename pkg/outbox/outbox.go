@@ -12,30 +12,30 @@ package outbox
 
 import "fmt"
 
-// DriverType represents a SQL database type.
-type DriverType string
+// SQLDialect represents a SQL database type.
+type SQLDialect string
 
-// Supported database driver types.
+// Supported database dialects.
 const (
-	DriverPostgres  DriverType = "postgres"
-	DriverMySQL     DriverType = "mysql"
-	DriverMariaDB   DriverType = "mariadb"
-	DriverSQLite    DriverType = "sqlite"
-	DriverOracle    DriverType = "oracle"
-	DriverSQLServer DriverType = "sqlserver"
+	PostgresDialect  SQLDialect = "postgres"
+	MySQLDialect     SQLDialect = "mysql"
+	MariaDBDialect   SQLDialect = "mariadb"
+	SQLiteDialect    SQLDialect = "sqlite"
+	OracleDialect    SQLDialect = "oracle"
+	SQLServerDialect SQLDialect = "sqlserver"
 )
 
 var o *outbox
 
 type outbox struct {
-	dbDriver DriverType
+	dbDialect SQLDialect
 }
 
-// SetDriver sets the SQL driver used by the outbox.
-// This configuration affects how SQL placeholders are generated in queries.
-// If not set, PostgreSQL is used as the default driver.
-func SetDriver(driver DriverType) {
-	o.setDriver(driver)
+// SetSQLDialect sets the SQL dialect used by the outbox.
+// This configuration affects how SQL queries are generated.
+// If not set, PostgreSQL is used as the default dialect.
+func SetSQLDialect(dialect SQLDialect) {
+	o.setDialect(dialect)
 }
 
 func init() {
@@ -44,20 +44,20 @@ func init() {
 
 func newOutbox() *outbox {
 	return &outbox{
-		dbDriver: DriverPostgres,
+		dbDialect: PostgresDialect,
 	}
 }
 
-func (o *outbox) setDriver(driver DriverType) {
-	o.dbDriver = driver
+func (o *outbox) setDialect(dialect SQLDialect) {
+	o.dbDialect = dialect
 }
 
 func formatMessageIDForDB(msg Message) any {
-	switch o.dbDriver {
-	case DriverMySQL, DriverMariaDB, DriverOracle:
+	switch o.dbDialect {
+	case MySQLDialect, MariaDBDialect, OracleDialect:
 		bytes, _ := msg.ID.MarshalBinary() // Convert UUID to binary for better storage
 		return bytes
-	case DriverPostgres, DriverSQLServer:
+	case PostgresDialect, SQLServerDialect:
 		return msg.ID // Native support
 	default:
 		return msg.ID.String()
@@ -65,17 +65,17 @@ func formatMessageIDForDB(msg Message) any {
 }
 
 func getSQLPlaceholder(index int) string { // TODO: extract query logic to SQL Dialect interface
-	switch o.dbDriver {
-	case DriverPostgres:
+	switch o.dbDialect {
+	case PostgresDialect:
 		return fmt.Sprintf("$%d", index)
 
-	case DriverMariaDB, DriverMySQL, DriverSQLite:
+	case MariaDBDialect, MySQLDialect, SQLiteDialect:
 		return "?"
 
-	case DriverOracle:
+	case OracleDialect:
 		return fmt.Sprintf(":%d", index)
 
-	case DriverSQLServer:
+	case SQLServerDialect:
 		return fmt.Sprintf("@p%d", index)
 
 	default:

@@ -10,42 +10,42 @@ import (
 
 func TestGetSQLPlaceholder(t *testing.T) {
 	tests := []struct {
-		driver          DriverType
+		driver          SQLDialect
 		index           int
 		wantPlaceholder string
 	}{
 		{
-			driver:          DriverPostgres,
+			driver:          PostgresDialect,
 			index:           1,
 			wantPlaceholder: "$1",
 		},
 		{
-			driver:          DriverMariaDB,
+			driver:          MariaDBDialect,
 			index:           2,
 			wantPlaceholder: "?",
 		},
 		{
-			driver:          DriverSQLite,
+			driver:          SQLiteDialect,
 			index:           3,
 			wantPlaceholder: "?",
 		},
 		{
-			driver:          DriverOracle,
+			driver:          OracleDialect,
 			index:           4,
 			wantPlaceholder: ":4",
 		},
 		{
-			driver:          DriverMySQL,
+			driver:          MySQLDialect,
 			index:           5,
 			wantPlaceholder: "?",
 		},
 		{
-			driver:          DriverSQLServer,
+			driver:          SQLServerDialect,
 			index:           6,
 			wantPlaceholder: "@p6",
 		},
 		{
-			driver:          DriverType("unknown"),
+			driver:          SQLDialect("unknown"),
 			index:           7,
 			wantPlaceholder: "?",
 		},
@@ -53,7 +53,7 @@ func TestGetSQLPlaceholder(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("driver %s", tt.driver), func(t *testing.T) {
-			SetDriver(tt.driver)
+			SetSQLDialect(tt.driver)
 
 			got := getSQLPlaceholder(tt.index)
 			assert.Equal(t, tt.wantPlaceholder, got)
@@ -68,42 +68,42 @@ func TestGetIDType(t *testing.T) {
 	testMessage := Message{ID: anyUUID}
 
 	tests := []struct {
-		driver   DriverType
+		driver   SQLDialect
 		wantType any
 	}{
 		{
-			driver:   DriverMySQL,
+			driver:   MySQLDialect,
 			wantType: anyUUIDBytes,
 		},
 		{
-			driver:   DriverMariaDB,
+			driver:   MariaDBDialect,
 			wantType: anyUUIDBytes,
 		},
 		{
-			driver:   DriverOracle,
+			driver:   OracleDialect,
 			wantType: anyUUIDBytes,
 		},
 		{
-			driver:   DriverPostgres,
+			driver:   PostgresDialect,
 			wantType: anyUUID,
 		},
 		{
-			driver:   DriverSQLServer,
+			driver:   SQLServerDialect,
 			wantType: anyUUID,
 		},
 		{
-			driver:   DriverSQLite,
+			driver:   SQLiteDialect,
 			wantType: anyUUIDAsString,
 		},
 		{
-			driver:   DriverType("unknown"),
+			driver:   SQLDialect("unknown"),
 			wantType: anyUUIDAsString, // default to string
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("driver %s", tt.driver), func(t *testing.T) {
-			SetDriver(tt.driver)
+			SetSQLDialect(tt.driver)
 
 			got := formatMessageIDForDB(testMessage)
 
