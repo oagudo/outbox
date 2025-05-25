@@ -170,7 +170,7 @@ func TestShouldTimeoutWhenReadingMessagesTakesTooLong(t *testing.T) {
 		outbox.WithInterval(readerInterval),
 		outbox.WithReadTimeout(0), // context should be cancelled
 		outbox.WithOnReadError(func(err error) {
-			require.Equal(t, context.DeadlineExceeded, err)
+			require.ErrorIs(t, err, context.DeadlineExceeded)
 			atomic.AddInt32(&onReadErrorCalls, 1)
 		}))
 	r.Start()
@@ -219,7 +219,7 @@ func TestShouldTimeoutWhenDeletingMessagesTakesTooLong(t *testing.T) {
 	r := outbox.NewReader(db, &fakePublisher{},
 		outbox.WithInterval(readerInterval),
 		outbox.WithOnDeleteError(func(_ outbox.Message, err error) {
-			require.Equal(t, context.DeadlineExceeded, err)
+			require.ErrorIs(t, err, context.DeadlineExceeded)
 			atomic.AddInt32(&onDeleteErrorCalls, 1)
 		}),
 		outbox.WithDeleteTimeout(0), // context should be cancelled

@@ -225,7 +225,11 @@ func (r *Reader) deleteMessage(msg Message) error {
 	// nolint:gosec
 	query := fmt.Sprintf("DELETE FROM Outbox WHERE id = %s", getSQLPlaceholder(1))
 	_, err := r.db.ExecContext(ctx, query, formatMessageIDForDB(msg))
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to delete message %s from outbox: %w", msg.ID, err)
+	}
+
+	return nil
 }
 
 func (r *Reader) readOutboxMessages() ([]Message, error) {
@@ -236,7 +240,7 @@ func (r *Reader) readOutboxMessages() ([]Message, error) {
 	query := buildSelectMessagesQuery()
 	rows, err := r.db.QueryContext(ctx, query, r.maxMessages)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to read outbox messages: %w", err)
 	}
 	defer func() {
 		_ = rows.Close()
@@ -246,12 +250,12 @@ func (r *Reader) readOutboxMessages() ([]Message, error) {
 	for rows.Next() {
 		var msg Message
 		if err := rows.Scan(&msg.ID, &msg.Payload, &msg.CreatedAt, &msg.Context); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to scan outbox message: %w", err)
 		}
 		messages = append(messages, msg)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unexpected error while scanning outbox messages: %w", err)
 	}
 	return messages, nil
 }
