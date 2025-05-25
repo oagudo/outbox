@@ -31,7 +31,6 @@ The Writer ensures your entity and outbox message are stored together atomically
 ```go
 // Setup database connection
 db, _ := sql.Open("pgx", "postgres://user:password@localhost:5432/outbox?sslmode=disable")
-// outbox.SetSQLDialect(outbox.MySQLDialect) Optional: only for non-PostgreSQL databases (MySQL, etc.)
 
 // Create a writer instance
 writer := outbox.NewWriter(db)
@@ -90,10 +89,21 @@ defer reader.Stop(context.Background()) // Stop during application shutdown
 
 ### Database Setup
 
-You will need to create an outbox table in your database with the following structure:
+#### 1. Choose Your Database Dialect
+
+The library supports multiple relational databases. By default, PostgreSQL dialect is used. If your database requires a different dialect, configure the appropriate during initialization. Available dialects are PostgreSQL, MySQL, MariaDB, SQLite, Oracle and SQL Server.
+
+```go
+// Example changing dialect to MySQL
+outbox.SetSQLDialect(outbox.MySQLDialect)
+```
+
+#### 2. Create the Outbox Table
+
+Create an outbox table in your database with the following structure. The table stores messages that need to be published to your message broker:
 
 ```sql
--- Example for Postgres
+-- For Postgres
 CREATE TABLE IF NOT EXISTS Outbox (
     id UUID PRIMARY KEY,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
@@ -103,7 +113,7 @@ CREATE TABLE IF NOT EXISTS Outbox (
 
 CREATE INDEX IF NOT EXISTS idx_outbox_created_at ON Outbox (created_at);
 
--- Example for Oracle
+-- For Oracle
 CREATE TABLE Outbox (
     id RAW(16) PRIMARY KEY,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL,
@@ -113,7 +123,7 @@ CREATE TABLE Outbox (
 
 CREATE INDEX idx_outbox_created_at ON Outbox (created_at);
 
--- Example for MySQL
+-- For MySQL
 CREATE TABLE IF NOT EXISTS Outbox (
     id BINARY(16) PRIMARY KEY,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
