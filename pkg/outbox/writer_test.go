@@ -79,7 +79,7 @@ func TestWriterErrorOnTxBegin(t *testing.T) {
 	})
 
 	require.Error(t, err)
-	require.Equal(t, txProvider.beginErr, err)
+	require.ErrorIs(t, err, txProvider.beginErr)
 
 	require.False(t, txProvider.tx.execCalled)
 	require.False(t, txProvider.tx.committed)
@@ -97,7 +97,7 @@ func TestWriterErrorOnTxCommit(t *testing.T) {
 	})
 
 	require.Error(t, err)
-	require.Equal(t, txProvider.tx.commitErr, err)
+	require.ErrorIs(t, err, txProvider.tx.commitErr)
 
 	require.True(t, callbackCalled)
 	require.True(t, txProvider.tx.execCalled)

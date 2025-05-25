@@ -73,7 +73,7 @@ func NewWriter(db *sql.DB, opts ...WriterOption) *Writer {
 func (w *Writer) Write(ctx context.Context, msg Message, writerTxFunc WriterTxFunc) error {
 	tx, err := w.sqlExecutor.BeginTx()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 
 	var txCommitted bool
@@ -85,14 +85,14 @@ func (w *Writer) Write(ctx context.Context, msg Message, writerTxFunc WriterTxFu
 
 	err = writerTxFunc(ctx, tx.ExecContext)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to execute user-defined query: %w", err)
 	}
 
 	query := fmt.Sprintf("INSERT INTO Outbox (id, created_at, context, payload) VALUES (%s, %s, %s, %s)",
 		getSQLPlaceholder(1), getSQLPlaceholder(2), getSQLPlaceholder(3), getSQLPlaceholder(4))
 	err = tx.ExecContext(ctx, query, formatMessageIDForDB(msg), msg.CreatedAt, msg.Context, msg.Payload)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to store message in outbox: %w", err)
 	}
 
 	err = tx.Commit()
@@ -103,7 +103,11 @@ func (w *Writer) Write(ctx context.Context, msg Message, writerTxFunc WriterTxFu
 		go w.publishMessage(ctxWithoutCancel, msg)
 	}
 
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
 }
 
 func (w *Writer) publishMessage(ctx context.Context, msg Message) {
