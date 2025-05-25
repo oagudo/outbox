@@ -62,8 +62,10 @@ func TestGetSQLPlaceholder(t *testing.T) {
 }
 
 func TestGetIDType(t *testing.T) {
-	testUUID := uuid.New()
-	testMessage := Message{ID: testUUID}
+	anyUUIDAsString := "217eefca-36bf-4ce1-885b-00b520730005"
+	anyUUID := uuid.MustParse(anyUUIDAsString)
+	anyUUIDBytes, _ := anyUUID.MarshalBinary()
+	testMessage := Message{ID: anyUUID}
 
 	tests := []struct {
 		driver   DriverType
@@ -71,31 +73,31 @@ func TestGetIDType(t *testing.T) {
 	}{
 		{
 			driver:   DriverMySQL,
-			wantType: testUUID[:],
+			wantType: anyUUIDBytes,
 		},
 		{
 			driver:   DriverMariaDB,
-			wantType: testUUID[:],
+			wantType: anyUUIDBytes,
 		},
 		{
 			driver:   DriverOracle,
-			wantType: testUUID[:],
+			wantType: anyUUIDBytes,
 		},
 		{
 			driver:   DriverPostgres,
-			wantType: testUUID,
+			wantType: anyUUID,
 		},
 		{
 			driver:   DriverSQLServer,
-			wantType: testUUID,
+			wantType: anyUUID,
 		},
 		{
 			driver:   DriverSQLite,
-			wantType: testUUID.String(),
+			wantType: anyUUIDAsString,
 		},
 		{
 			driver:   DriverType("unknown"),
-			wantType: testUUID.String(), // default to string
+			wantType: anyUUIDAsString, // default to string
 		},
 	}
 
