@@ -33,21 +33,17 @@ The Writer ensures your entity and outbox message are stored together atomically
 // Setup database connection
 db, _ := sql.Open("pgx", "postgres://user:password@localhost:5432/outbox?sslmode=disable")
 
-// Create a DBContext instance
+// Create a DBContext and Writer instance
 dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
-
-// Create a writer instance
 writer := outbox.NewWriter(dbCtx)
 
 // In your business logic:
-
-// Create your entity
+//
+// Create your entity and outbox message
 entity := Entity{
     ID:        uuid.New(),
     CreatedAt: time.Now().UTC(),
 }
-
-// Create outbox message
 entityJSON, _ := json.Marshal(entity)
 msg := outbox.Message{
     ID:        entity.ID,

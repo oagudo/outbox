@@ -7,7 +7,7 @@
 //     local database transaction. This ensures that the message is captured atomically with
 //     the business operation that produces it.
 //
-//  2. Reading & Publishing: A background process reads messages from the outbox
+//  2. Reading & Publishing: A background process reads unpublished messages from the outbox
 //     table and publishes them to the message broker. Once successfully published, messages
 //     are removed from the outbox table.
 //
