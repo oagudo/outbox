@@ -7,6 +7,7 @@ import (
 
 	_ "github.com/denisenkom/go-mssqldb"
 	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/oagudo/outbox/pkg/outbox"
 	_ "github.com/sijms/go-ora/v2"
 	"github.com/stretchr/testify/require"
@@ -14,51 +15,91 @@ import (
 
 func TestDialectSucceeds(t *testing.T) {
 	type test struct {
-		openConn func() (*sql.DB, error)
-		dialect  outbox.SQLDialect
+		openDB  func() (*sql.DB, error)
+		dialect outbox.SQLDialect
 	}
 
 	tests := []test{
 		{
-			openConn: func() (*sql.DB, error) {
-				return sql.Open("mysql", "user:password@tcp(localhost:3306)/outbox?parseTime=true")
+			openDB: func() (*sql.DB, error) {
+				db, err := sql.Open("mysql", "user:password@tcp(localhost:3306)/outbox?parseTime=true")
+				if err != nil {
+					return nil, err
+				}
+
+				_, err = db.Exec("TRUNCATE TABLE Outbox")
+				return db, err
 			},
 			dialect: outbox.MySQLDialect,
 		},
 		{
-			openConn: func() (*sql.DB, error) {
-				return sql.Open("oracle", "oracle://app_user:pass@localhost:1521/FREEPDB1")
+			openDB: func() (*sql.DB, error) {
+				db, err := sql.Open("oracle", "oracle://app_user:pass@localhost:1521/FREEPDB1")
+				if err != nil {
+					return nil, err
+				}
+
+				_, err = db.Exec("TRUNCATE TABLE Outbox")
+				return db, err
 			},
 			dialect: outbox.OracleDialect,
 		},
 		{
-			openConn: func() (*sql.DB, error) {
-				return sql.Open("sqlserver", "sqlserver://sa:SqlServer123!@localhost:1433?database=outbox")
+			openDB: func() (*sql.DB, error) {
+				db, err := sql.Open("sqlserver", "sqlserver://sa:SqlServer123!@localhost:1433?database=outbox")
+				if err != nil {
+					return nil, err
+				}
+
+				_, err = db.Exec("TRUNCATE TABLE Outbox")
+				return db, err
 			},
 			dialect: outbox.SQLServerDialect,
 		},
+		{
+			openDB: func() (*sql.DB, error) {
+				db, err := sql.Open("sqlite3", ":memory:")
+				if err != nil {
+					return nil, err
+				}
 
-		// TODO: add tests for sqlite and sql server
+				// Create tables since SQLite runs in-process
+				_, err = db.Exec(`
+					CREATE TABLE IF NOT EXISTS Outbox (
+						id TEXT PRIMARY KEY,
+						created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+						context BLOB NOT NULL,
+						payload BLOB NOT NULL
+					);
+					CREATE INDEX IF NOT EXISTS idx_outbox_created_at ON Outbox (created_at);
+				`)
+				if err != nil {
+					return nil, err
+				}
+
+				_, err = db.Exec("DELETE FROM Outbox")
+				if err != nil {
+					return nil, err
+				}
+
+				return db, nil
+			},
+			dialect: outbox.SQLiteDialect,
+		},
 	}
-	for _, test := range tests {
-		t.Run(string(test.dialect), func(t *testing.T) {
+	for _, tt := range tests {
+		t.Run(string(tt.dialect), func(t *testing.T) {
 			t.Cleanup(func() {
 				outbox.SetSQLDialect(outbox.PostgresDialect)
 			})
 
-			outbox.SetSQLDialect(test.dialect)
+			outbox.SetSQLDialect(tt.dialect)
 
-			db, err := test.openConn()
+			db, err := tt.openDB()
 			require.NoError(t, err)
 			defer func() {
 				_ = db.Close()
 			}()
-
-			err = db.Ping()
-			require.NoError(t, err)
-
-			_, err = db.Exec("TRUNCATE TABLE Outbox")
-			require.NoError(t, err)
 
 			anyMsg := createMessageFixture()
 			w := outbox.NewWriter(db)

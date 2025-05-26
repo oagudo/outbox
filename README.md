@@ -142,6 +142,15 @@ CREATE TABLE Outbox (
 );
 
 CREATE INDEX idx_outbox_created_at ON Outbox (created_at);
+
+-- For sqlite
+CREATE TABLE IF NOT EXISTS Outbox (
+    id TEXT PRIMARY KEY,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    context BLOB NOT NULL,
+    payload BLOB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_outbox_created_at ON Outbox (created_at);
 ```
 
 ## Examples
