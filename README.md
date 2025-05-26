@@ -108,8 +108,8 @@ func (p *messagePublisher) Publish(ctx context.Context, msg outbox.Message) erro
 
 // Create and start the reader
 reader := outbox.NewReader(
-    dbCtx,                        // DBContext instance
-    &messagePublisher{},          // Your publisher implementation
+    dbCtx,                              // DBContext instance
+    &messagePublisher{},                // Your publisher implementation
     outbox.WithInterval(5*time.Second), // Optional: Custom polling interval (default: 10s)
 )
 reader.Start()
