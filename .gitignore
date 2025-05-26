@@ -401,6 +401,7 @@ FodyWeavers.xsd
 *.sln.iml
 
 # Coverage files
-coverage.out
-coverage.html
+unit-coverage.txt
+integration-coverage.txt
 coverage.txt
+coverage.html

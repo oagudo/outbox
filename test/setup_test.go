@@ -20,7 +20,6 @@ func TestMain(m *testing.M) {
 		log.Fatalf("Failed to connect to database: %s", err)
 	}
 
-	log.Println("Connected to database")
 	err = truncateOutboxTable()
 	if err != nil {
 		log.Fatalf("Failed to truncate outbox table: %s", err)
