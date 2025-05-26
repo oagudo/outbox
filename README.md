@@ -33,8 +33,11 @@ The Writer ensures your entity and outbox message are stored together atomically
 // Setup database connection
 db, _ := sql.Open("pgx", "postgres://user:password@localhost:5432/outbox?sslmode=disable")
 
+// Create a DBContext instance
+dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
+
 // Create a writer instance
-writer := outbox.NewWriter(db)
+writer := outbox.NewWriter(dbCtx)
 
 // In your business logic:
 
@@ -81,7 +84,7 @@ Optimistic publishing attempts to publish messages immediately after transaction
 publisher := &messagePublisher{}
 
 // Enable optimistic publishing in writer
-writer := outbox.NewWriter(db, outbox.WithOptimisticPublisher(publisher))
+writer := outbox.NewWriter(dbCtx, outbox.WithOptimisticPublisher(publisher))
 ```
 
 **Important considerations:**
@@ -107,7 +110,7 @@ func (p *messagePublisher) Publish(ctx context.Context, msg outbox.Message) erro
 
 // Create and start the reader
 reader := outbox.NewReader(
-    db,                           // Same database connection
+    dbCtx,                        // DBContext instance
     &messagePublisher{},          // Your publisher implementation
     outbox.WithInterval(5*time.Second), // Optional: Custom polling interval (default: 10s)
 )
@@ -119,11 +122,11 @@ defer reader.Stop(context.Background()) // Stop during application shutdown
 
 #### 1. Choose Your Database Dialect
 
-The library supports multiple relational databases. By default, PostgreSQL dialect is used. If your database requires a different dialect, configure the appropriate during initialization. Supported dialects are PostgreSQL, MySQL, MariaDB, SQLite, Oracle and SQL Server.
+The library supports multiple relational databases. Configure the appropriate `SQLDialect` when creating the `DBContext`. Supported dialects are PostgreSQL, MySQL, MariaDB, SQLite, Oracle and SQL Server.
 
 ```go
-// Example changing dialect to MySQL
-outbox.SetSQLDialect(outbox.MySQLDialect)
+// Example creating a DBContext with MySQL dialect
+dbCtx := outbox.NewDBContext(db, outbox.SQLDialectMySQL)
 ```
 
 #### 2. Create the Outbox Table

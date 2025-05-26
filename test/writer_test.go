@@ -20,7 +20,8 @@ type entity struct {
 }
 
 func TestWriterSuccessfullyWritesToOutbox(t *testing.T) {
-	w := outbox.NewWriter(db)
+	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
+	w := outbox.NewWriter(dbCtx)
 
 	anyMsg := createMessageFixture()
 	anyEntity := createEntityFixture()
@@ -43,7 +44,8 @@ func TestWriterSuccessfullyWritesToOutbox(t *testing.T) {
 }
 
 func TestWriterRollsBackOnOutboxWriteError(t *testing.T) {
-	w := outbox.NewWriter(db)
+	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
+	w := outbox.NewWriter(dbCtx)
 
 	// Write a message to the outbox
 	anyMsg := createMessageFixture()
@@ -68,7 +70,8 @@ func TestWriterRollsBackOnOutboxWriteError(t *testing.T) {
 }
 
 func TestWriterRollsBackOnCallbackError(t *testing.T) {
-	w := outbox.NewWriter(db)
+	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
+	w := outbox.NewWriter(dbCtx)
 
 	anyMsg := createMessageFixture()
 
@@ -102,7 +105,8 @@ func (p *fakePublisher) Publish(ctx context.Context, msg outbox.Message) error {
 func TestWriterWithOptimisticPublisher(t *testing.T) {
 	t.Run("publishes message and removes it from outbox if callback succeeds", func(t *testing.T) {
 		publisher := &fakePublisher{}
-		w := outbox.NewWriter(db, outbox.WithOptimisticPublisher(publisher))
+		dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
+		w := outbox.NewWriter(dbCtx, outbox.WithOptimisticPublisher(publisher))
 
 		anyMsg := createMessageFixture()
 		err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxExecFunc) error {
@@ -118,7 +122,8 @@ func TestWriterWithOptimisticPublisher(t *testing.T) {
 
 	t.Run("does not remove message from outbox if publisher returns an error", func(t *testing.T) {
 		publisher := &fakePublisher{publishErr: errors.New("any publisher error")}
-		w := outbox.NewWriter(db, outbox.WithOptimisticPublisher(publisher))
+		dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
+		w := outbox.NewWriter(dbCtx, outbox.WithOptimisticPublisher(publisher))
 
 		anyMsg := createMessageFixture()
 		err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxExecFunc) error {
@@ -136,7 +141,8 @@ func TestWriterWithOptimisticPublisher(t *testing.T) {
 
 	t.Run("does not remove message from outbox if optimistic publishing takes too long", func(t *testing.T) {
 		publisher := &fakePublisher{}
-		w := outbox.NewWriter(db,
+		dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
+		w := outbox.NewWriter(dbCtx,
 			outbox.WithOptimisticPublisher(publisher),
 			outbox.WithOptimisticTimeout(0), // context should be cancelled
 		)

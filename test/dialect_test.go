@@ -30,7 +30,7 @@ func TestDialectSucceeds(t *testing.T) {
 				_, err = db.Exec("TRUNCATE TABLE Outbox")
 				return db, err
 			},
-			dialect: outbox.MySQLDialect,
+			dialect: outbox.SQLDialectMySQL,
 		},
 		{
 			openDB: func() (*sql.DB, error) {
@@ -42,7 +42,7 @@ func TestDialectSucceeds(t *testing.T) {
 				_, err = db.Exec("TRUNCATE TABLE Outbox")
 				return db, err
 			},
-			dialect: outbox.OracleDialect,
+			dialect: outbox.SQLDialectOracle,
 		},
 		{
 			openDB: func() (*sql.DB, error) {
@@ -54,7 +54,7 @@ func TestDialectSucceeds(t *testing.T) {
 				_, err = db.Exec("TRUNCATE TABLE Outbox")
 				return db, err
 			},
-			dialect: outbox.SQLServerDialect,
+			dialect: outbox.SQLDialectSQLServer,
 		},
 		{
 			openDB: func() (*sql.DB, error) {
@@ -84,7 +84,7 @@ func TestDialectSucceeds(t *testing.T) {
 
 				return db, nil
 			},
-			dialect: outbox.SQLiteDialect,
+			dialect: outbox.SQLDialectSQLite,
 		},
 		{
 			openDB: func() (*sql.DB, error) {
@@ -96,17 +96,11 @@ func TestDialectSucceeds(t *testing.T) {
 				_, err = db.Exec("TRUNCATE TABLE Outbox")
 				return db, err
 			},
-			dialect: outbox.MariaDBDialect,
+			dialect: outbox.SQLDialectMariaDB,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.dialect), func(t *testing.T) {
-			t.Cleanup(func() {
-				outbox.SetSQLDialect(outbox.PostgresDialect)
-			})
-
-			outbox.SetSQLDialect(tt.dialect)
-
 			db, err := tt.openDB()
 			require.NoError(t, err)
 			defer func() {
@@ -114,13 +108,14 @@ func TestDialectSucceeds(t *testing.T) {
 			}()
 
 			anyMsg := createMessageFixture()
-			w := outbox.NewWriter(db)
+			dbCtx := outbox.NewDBContext(db, tt.dialect)
+			w := outbox.NewWriter(dbCtx)
 			err = w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxExecFunc) error {
 				return nil
 			})
 			require.NoError(t, err)
 
-			r := outbox.NewReader(db, &fakePublisher{
+			r := outbox.NewReader(dbCtx, &fakePublisher{
 				onPublish: func(_ context.Context, msg outbox.Message) {
 					assertMessageEqual(t, anyMsg, msg)
 				},

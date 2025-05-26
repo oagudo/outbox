@@ -2,7 +2,6 @@ package outbox
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"time"
 
@@ -13,6 +12,7 @@ import (
 // It optionally supports optimistic publishing, which attempts to publish messages
 // immediately after transaction commit.
 type Writer struct {
+	dbCtx        *DBContext
 	sqlExecutor  coreSql.Executor
 	msgPublisher MessagePublisher
 
@@ -50,10 +50,11 @@ func WithOptimisticTimeout(timeout time.Duration) WriterOption {
 	}
 }
 
-// NewWriter creates a new outbox Writer with the given database connection and options.
-func NewWriter(db *sql.DB, opts ...WriterOption) *Writer {
+// NewWriter creates a new outbox Writer with the given database context and options.
+func NewWriter(dbCtx *DBContext, opts ...WriterOption) *Writer {
 	w := &Writer{
-		sqlExecutor:       &coreSql.DBAdapter{DB: db},
+		sqlExecutor:       &coreSql.DBAdapter{DB: dbCtx.db},
+		dbCtx:             dbCtx,
 		optimisticTimeout: 10 * time.Second,
 	}
 
@@ -89,8 +90,8 @@ func (w *Writer) Write(ctx context.Context, msg Message, writerTxFunc WriterTxFu
 	}
 
 	query := fmt.Sprintf("INSERT INTO Outbox (id, created_at, context, payload) VALUES (%s, %s, %s, %s)",
-		getSQLPlaceholder(1), getSQLPlaceholder(2), getSQLPlaceholder(3), getSQLPlaceholder(4))
-	err = tx.ExecContext(ctx, query, formatMessageIDForDB(msg), msg.CreatedAt, msg.Context, msg.Payload)
+		w.dbCtx.getSQLPlaceholder(1), w.dbCtx.getSQLPlaceholder(2), w.dbCtx.getSQLPlaceholder(3), w.dbCtx.getSQLPlaceholder(4))
+	err = tx.ExecContext(ctx, query, w.dbCtx.formatMessageIDForDB(msg), msg.CreatedAt, msg.Context, msg.Payload)
 	if err != nil {
 		return fmt.Errorf("failed to store message in outbox: %w", err)
 	}
@@ -116,7 +117,7 @@ func (w *Writer) publishMessage(ctx context.Context, msg Message) {
 
 	err := w.msgPublisher.Publish(ctx, msg)
 	if err == nil {
-		query := fmt.Sprintf("DELETE FROM Outbox WHERE id = %s", getSQLPlaceholder(1))
-		_ = w.sqlExecutor.ExecContext(ctx, query, formatMessageIDForDB(msg))
+		query := fmt.Sprintf("DELETE FROM Outbox WHERE id = %s", w.dbCtx.getSQLPlaceholder(1))
+		_ = w.sqlExecutor.ExecContext(ctx, query, w.dbCtx.formatMessageIDForDB(msg))
 	}
 }

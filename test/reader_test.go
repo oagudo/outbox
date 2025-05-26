@@ -24,7 +24,8 @@ func TestReaderSuccessfullyPublishesMessage(t *testing.T) {
 	anyMsg := createMessageFixture()
 	writeMessage(t, anyMsg)
 
-	r := outbox.NewReader(db, &fakePublisher{
+	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
+	r := outbox.NewReader(dbCtx, &fakePublisher{
 		onPublish: func(_ context.Context, msg outbox.Message) {
 			assertMessageEqual(t, anyMsg, msg)
 		},
@@ -60,7 +61,8 @@ func TestReaderPublishesMessagesInOrder(t *testing.T) {
 	writeMessages(t, msgs)
 
 	var onPublishCalls int32 = 0
-	r := outbox.NewReader(db, &fakePublisher{
+	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
+	r := outbox.NewReader(dbCtx, &fakePublisher{
 		onPublish: func(_ context.Context, msg outbox.Message) {
 			currentCalls := atomic.LoadInt32(&onPublishCalls)
 			require.Equal(t, msg.ID, msgs[currentCalls].ID) // they are published in order
@@ -91,7 +93,8 @@ func TestReaderOnReadError(t *testing.T) {
 	require.NoError(t, err)
 
 	var onReadCallbackCalled atomic.Bool
-	r := outbox.NewReader(db, &fakePublisher{}, outbox.WithInterval(readerInterval),
+	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
+	r := outbox.NewReader(dbCtx, &fakePublisher{}, outbox.WithInterval(readerInterval),
 		outbox.WithOnReadError(func(err error) {
 			require.Error(t, err)
 			onReadCallbackCalled.Store(true)
@@ -116,7 +119,8 @@ func TestReaderOnDeleteError(t *testing.T) {
 	writeMessage(t, anyMsg)
 
 	var onDeleteCallbackCalled atomic.Bool
-	r := outbox.NewReader(db, &fakePublisher{
+	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
+	r := outbox.NewReader(dbCtx, &fakePublisher{
 		onPublish: func(_ context.Context, _ outbox.Message) {
 			_, err := db.Exec("ALTER TABLE Outbox RENAME TO Outbox_old") // force an error on delete
 			require.NoError(t, err)
@@ -141,7 +145,8 @@ func TestStopTimesOutIfReaderIsNotStopped(t *testing.T) {
 
 	var wg sync.WaitGroup
 	wg.Add(1)
-	r := outbox.NewReader(db, &fakePublisher{
+	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
+	r := outbox.NewReader(dbCtx, &fakePublisher{
 		onPublish: func(_ context.Context, _ outbox.Message) {
 			wg.Done() // trigger for stop
 			time.Sleep(100 * time.Millisecond)
@@ -166,7 +171,8 @@ func TestShouldTimeoutWhenReadingMessagesTakesTooLong(t *testing.T) {
 	writeMessage(t, anyMsg)
 
 	var onReadErrorCalls int32 = 0
-	r := outbox.NewReader(db, &fakePublisher{},
+	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
+	r := outbox.NewReader(dbCtx, &fakePublisher{},
 		outbox.WithInterval(readerInterval),
 		outbox.WithReadTimeout(0), // context should be cancelled
 		outbox.WithOnReadError(func(err error) {
@@ -190,7 +196,8 @@ func TestShouldTimeoutWhenPublishingMessagesTakesTooLong(t *testing.T) {
 	writeMessage(t, anyMsg)
 
 	var onPublishCalls int32 = 0
-	r := outbox.NewReader(db, &fakePublisher{
+	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
+	r := outbox.NewReader(dbCtx, &fakePublisher{
 		onPublish: func(ctx context.Context, _ outbox.Message) {
 			require.Equal(t, context.DeadlineExceeded, ctx.Err())
 			atomic.AddInt32(&onPublishCalls, 1)
@@ -216,7 +223,8 @@ func TestShouldTimeoutWhenDeletingMessagesTakesTooLong(t *testing.T) {
 	writeMessage(t, anyMsg)
 
 	var onDeleteErrorCalls int32 = 0
-	r := outbox.NewReader(db, &fakePublisher{},
+	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
+	r := outbox.NewReader(dbCtx, &fakePublisher{},
 		outbox.WithInterval(readerInterval),
 		outbox.WithOnDeleteError(func(_ outbox.Message, err error) {
 			require.ErrorIs(t, err, context.DeadlineExceeded)
@@ -241,7 +249,8 @@ func TestShouldKeepTryingToPublishMessagesAfterError(t *testing.T) {
 	writeMessage(t, anyMsg)
 
 	var onPublishCalls int32 = 0
-	r := outbox.NewReader(db, &fakePublisher{
+	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
+	r := outbox.NewReader(dbCtx, &fakePublisher{
 		onPublish: func(_ context.Context, _ outbox.Message) {
 			atomic.AddInt32(&onPublishCalls, 1)
 		},
@@ -266,7 +275,8 @@ func TestStopCancelsInProgressPublishing(t *testing.T) {
 	}
 
 	var onPublishCalls int32 = 0
-	r := outbox.NewReader(db, &fakePublisher{
+	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
+	r := outbox.NewReader(dbCtx, &fakePublisher{
 		onPublish: func(_ context.Context, _ outbox.Message) {
 			atomic.AddInt32(&onPublishCalls, 1)
 			time.Sleep(1 * time.Millisecond)
@@ -292,7 +302,8 @@ func TestStopCancelsInProgressPublishing(t *testing.T) {
 func TestMultipleStartCalls(t *testing.T) {
 	setupTest(t)
 
-	r := outbox.NewReader(db, &fakePublisher{})
+	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
+	r := outbox.NewReader(dbCtx, &fakePublisher{})
 
 	r.Start()
 	r.Start() // Second call to Start should be a no-op
@@ -304,7 +315,8 @@ func TestMultipleStartCalls(t *testing.T) {
 func TestMultipleStopCalls(t *testing.T) {
 	setupTest(t)
 
-	r := outbox.NewReader(db, &fakePublisher{})
+	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
+	r := outbox.NewReader(dbCtx, &fakePublisher{})
 	r.Start()
 
 	err := r.Stop(context.Background())
@@ -332,7 +344,8 @@ func countMessages(t *testing.T) (int, error) {
 func writeMessage(t *testing.T, msg outbox.Message) {
 	t.Helper()
 
-	w := outbox.NewWriter(db)
+	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
+	w := outbox.NewWriter(dbCtx)
 	err := w.Write(context.Background(), msg, func(_ context.Context, _ outbox.TxExecFunc) error {
 		return nil
 	})

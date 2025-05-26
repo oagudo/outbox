@@ -86,9 +86,9 @@ func main() {
 	defer natsConn.Close()
 
 	// Outbox setup
-	outbox.SetSQLDialect(outbox.OracleDialect)
-	writer := outbox.NewWriter(db)
-	reader := outbox.NewReader(db, &messagePublisher{natsConn: natsConn}, outbox.WithInterval(1*time.Second))
+	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectOracle)
+	writer := outbox.NewWriter(dbCtx)
+	reader := outbox.NewReader(dbCtx, &messagePublisher{natsConn: natsConn}, outbox.WithInterval(1*time.Second))
 	reader.Start()
 	defer reader.Stop(context.Background())
 	r := http.NewServeMux()

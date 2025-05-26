@@ -82,8 +82,9 @@ func main() {
 	defer kafkaWriter.Close()
 
 	// Outbox setup
-	writer := outbox.NewWriter(db)
-	reader := outbox.NewReader(db, &messagePublisher{kafkaWriter: kafkaWriter}, outbox.WithInterval(1*time.Second))
+	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
+	writer := outbox.NewWriter(dbCtx)
+	reader := outbox.NewReader(dbCtx, &messagePublisher{kafkaWriter: kafkaWriter}, outbox.WithInterval(1*time.Second))
 	reader.Start()
 	defer reader.Stop(context.Background())
 	r := http.NewServeMux()

@@ -2,7 +2,6 @@ package outbox
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -28,7 +27,7 @@ type OnMessageErrorFunc func(Message, error)
 // Reader periodically reads unpublished messages from the outbox table
 // and attempts to publish them to an external system.
 type Reader struct {
-	db           *sql.DB
+	dbCtx        *DBContext
 	msgPublisher MessagePublisher
 
 	onDeleteErrorCallback OnMessageErrorFunc
@@ -110,13 +109,13 @@ func noOpMessageErrorFunc(Message, error) {}
 
 func noOpReadErrorFunc(error) {}
 
-// NewReader creates a new outbox Reader with the given database connection,
+// NewReader creates a new outbox Reader with the given database context,
 // message publisher, and options.
-func NewReader(db *sql.DB, msgPublisher MessagePublisher, opts ...ReaderOption) *Reader {
+func NewReader(dbCtx *DBContext, msgPublisher MessagePublisher, opts ...ReaderOption) *Reader {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	r := &Reader{
-		db:           db,
+		dbCtx:        dbCtx,
 		msgPublisher: msgPublisher,
 		ctx:          ctx,
 		cancel:       cancel,
@@ -224,8 +223,8 @@ func (r *Reader) deleteMessage(msg Message) error {
 	defer cancel()
 
 	// nolint:gosec
-	query := fmt.Sprintf("DELETE FROM Outbox WHERE id = %s", getSQLPlaceholder(1))
-	_, err := r.db.ExecContext(ctx, query, formatMessageIDForDB(msg))
+	query := fmt.Sprintf("DELETE FROM Outbox WHERE id = %s", r.dbCtx.getSQLPlaceholder(1))
+	_, err := r.dbCtx.db.ExecContext(ctx, query, r.dbCtx.formatMessageIDForDB(msg))
 	if err != nil {
 		return fmt.Errorf("failed to delete message %s from outbox: %w", msg.ID, err)
 	}
@@ -238,8 +237,8 @@ func (r *Reader) readOutboxMessages() ([]Message, error) {
 	defer cancel()
 
 	// nolint:gosec
-	query := buildSelectMessagesQuery()
-	rows, err := r.db.QueryContext(ctx, query, r.maxMessages)
+	query := r.buildSelectMessagesQuery()
+	rows, err := r.dbCtx.db.QueryContext(ctx, query, r.maxMessages)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read outbox messages: %w", err)
 	}
@@ -261,14 +260,14 @@ func (r *Reader) readOutboxMessages() ([]Message, error) {
 	return messages, nil
 }
 
-func buildSelectMessagesQuery() string {
-	limitPlaceholder := getSQLPlaceholder(1)
+func (r *Reader) buildSelectMessagesQuery() string {
+	limitPlaceholder := r.dbCtx.getSQLPlaceholder(1)
 
-	switch o.dbDialect {
-	case OracleDialect:
+	switch r.dbCtx.dialect {
+	case SQLDialectOracle:
 		return fmt.Sprintf("SELECT id, payload, created_at, context FROM Outbox ORDER BY created_at ASC FETCH FIRST %s ROWS ONLY", limitPlaceholder)
 
-	case SQLServerDialect:
+	case SQLDialectSQLServer:
 		return fmt.Sprintf("SELECT TOP (%s) id, payload, created_at, context FROM Outbox ORDER BY created_at ASC", limitPlaceholder)
 
 	default:
