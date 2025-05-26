@@ -44,12 +44,14 @@ entity := Entity{
     ID:        uuid.New(),
     CreatedAt: time.Now().UTC(),
 }
+
 entityJSON, _ := json.Marshal(entity)
+msgContext := json.RawMessage(`{"trace_id":"abc123","correlation_id":"xyz789"}`)
 msg := outbox.Message{
     ID:        entity.ID,
     CreatedAt: entity.CreatedAt,
     Payload:   entityJSON,
-    Context:   json.RawMessage(`{"trace_id":"abc123","correlation_id":"xyz789"}`), // Any additional metadata for the message
+    Context:   msgContext, // Any relevant metadata for the message
 }
 
 // Write message and entity in a single transaction
