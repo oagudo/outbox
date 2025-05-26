@@ -14,6 +14,7 @@ Lightweight library for the [transactional outbox pattern](https://microservices
 - **Minimal External Dependencies:** Doesn't impose additional dependencies (like specific Kafka, MySQL, etc. libraries) other than [google/uuid](https://github.com/google/uuid) on users of this library.
 - **Database Agnostic:** Designed to work with PostgreSQL, MySQL, CockroachDB, and other relational databases.
 - **Message Broker Agnostic:** Integrates seamlessly with popular brokers like Kafka, NATS, RabbitMQ, and others.
+- **Optimistic Publishing:** Optional immediate async message publishing after transaction commit for reduced latency, with guaranteed delivery fallback.
 - **Simplicity:** Minimal, easy-to-understand codebase focused on core outbox pattern concepts.
 - **Extensible:** Designed for easy customization and integration into your own projects.
 
@@ -35,11 +36,9 @@ db, _ := sql.Open("pgx", "postgres://user:password@localhost:5432/outbox?sslmode
 // Create a writer instance
 writer := outbox.NewWriter(db)
 
-// Optional: Enable optimistic publishing to attempt publishing messages
-// right after transaction commit (in addition to reader background process)
-// writer := outbox.NewWriter(db, outbox.WithOptimisticPublisher(msgPublisher))
-
 // In your business logic:
+
+// Create your entity
 entity := Entity{
     ID:        uuid.New(),
     CreatedAt: time.Now().UTC(),
@@ -62,6 +61,35 @@ err = writer.Write(ctx, msg, func(ctx context.Context, txExecFunc outbox.TxExecF
     )
 })
 ```
+
+<details>
+<summary><strong>🚀 Optimistic Publishing (Optional)</strong></summary>
+
+Optimistic publishing attempts to publish messages immediately after transaction commit, reducing latency while maintaining guaranteed delivery through the background reader as fallback.
+
+#### How It Works
+
+1. Transaction commits (entity + outbox message stored)
+2. Immediate publish attempt to broker (asynchronously, will not block the incoming request)
+3. On success: message is removed from outbox
+4. On failure: background reader handles delivery later
+
+#### Configuration
+
+```go
+// Create publisher (same as used by reader)
+publisher := &messagePublisher{}
+
+// Enable optimistic publishing in writer
+writer := outbox.NewWriter(db, outbox.WithOptimisticPublisher(publisher))
+```
+
+**Important considerations:**
+- Publishing happens asynchronously after transaction commit
+- Message consumers must be idempotent as messages could be published twice - by the optimistic publisher and the reader (Note: consumer idempotency is a good practice regardless of optimistic publishing, though some brokers also provide deduplication features)
+- Publishing failures don't affect your transactions - they don't cause `Write()` to fail
+
+</details>
 
 ### The Reader
 
