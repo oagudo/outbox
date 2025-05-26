@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"testing"
 
+	_ "github.com/denisenkom/go-mssqldb"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/oagudo/outbox/pkg/outbox"
 	_ "github.com/sijms/go-ora/v2"
@@ -30,6 +31,12 @@ func TestDialectSucceeds(t *testing.T) {
 			},
 			dialect: outbox.OracleDialect,
 		},
+		{
+			openConn: func() (*sql.DB, error) {
+				return sql.Open("sqlserver", "sqlserver://sa:SqlServer123!@localhost:1433?database=outbox")
+			},
+			dialect: outbox.SQLServerDialect,
+		},
 
 		// TODO: add tests for sqlite and sql server
 	}
@@ -38,24 +45,29 @@ func TestDialectSucceeds(t *testing.T) {
 			t.Cleanup(func() {
 				outbox.SetSQLDialect(outbox.PostgresDialect)
 			})
+
 			outbox.SetSQLDialect(test.dialect)
-			dialectDB, err := test.openConn()
+
+			db, err := test.openConn()
 			require.NoError(t, err)
 			defer func() {
-				_ = dialectDB.Close()
+				_ = db.Close()
 			}()
 
-			_, err = dialectDB.Exec("TRUNCATE TABLE Outbox")
+			err = db.Ping()
+			require.NoError(t, err)
+
+			_, err = db.Exec("TRUNCATE TABLE Outbox")
 			require.NoError(t, err)
 
 			anyMsg := createMessageFixture()
-			w := outbox.NewWriter(dialectDB)
+			w := outbox.NewWriter(db)
 			err = w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxExecFunc) error {
 				return nil
 			})
 			require.NoError(t, err)
 
-			r := outbox.NewReader(dialectDB, &fakePublisher{
+			r := outbox.NewReader(db, &fakePublisher{
 				onPublish: func(_ context.Context, msg outbox.Message) {
 					assertMessageEqual(t, anyMsg, msg)
 				},
@@ -64,7 +76,7 @@ func TestDialectSucceeds(t *testing.T) {
 
 			require.Eventually(t, func() bool {
 				var count int
-				err := dialectDB.QueryRow("SELECT COUNT(*) FROM Outbox").Scan(&count)
+				err := db.QueryRow("SELECT COUNT(*) FROM Outbox").Scan(&count)
 				return err == nil && count == 0
 			}, testTimeout, pollInterval)
 

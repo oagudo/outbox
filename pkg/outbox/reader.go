@@ -267,6 +267,9 @@ func buildSelectMessagesQuery() string {
 	case OracleDialect:
 		return fmt.Sprintf("SELECT id, payload, created_at, context FROM Outbox ORDER BY created_at ASC FETCH FIRST %s ROWS ONLY", limitPlaceholder)
 
+	case SQLServerDialect:
+		return fmt.Sprintf("SELECT TOP (%s) id, payload, created_at, context FROM Outbox ORDER BY created_at ASC", limitPlaceholder)
+
 	default:
 		return fmt.Sprintf("SELECT id, payload, created_at, context FROM Outbox ORDER BY created_at ASC LIMIT %s", limitPlaceholder)
 	}

@@ -132,6 +132,16 @@ CREATE TABLE IF NOT EXISTS Outbox (
 );
 
 CREATE INDEX idx_outbox_created_at ON Outbox (created_at);
+
+-- For SQL Server
+CREATE TABLE Outbox (
+    id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
+    created_at DATETIME2(3) NOT NULL DEFAULT GETUTCDATE(),
+    context VARBINARY(MAX) NOT NULL,
+    payload VARBINARY(MAX) NOT NULL
+);
+
+CREATE INDEX idx_outbox_created_at ON Outbox (created_at);
 ```
 
 ## Examples

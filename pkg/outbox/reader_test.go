@@ -28,7 +28,7 @@ func TestBuildSelectMessagesQuery(t *testing.T) {
 		},
 		{
 			driver:  SQLServerDialect,
-			wantSQL: "SELECT id, payload, created_at, context FROM Outbox ORDER BY created_at ASC LIMIT @p1",
+			wantSQL: "SELECT TOP (@p1) id, payload, created_at, context FROM Outbox ORDER BY created_at ASC",
 		},
 		{
 			driver:  OracleDialect,

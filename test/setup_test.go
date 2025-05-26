@@ -20,6 +20,11 @@ func TestMain(m *testing.M) {
 		log.Fatalf("Failed to connect to database: %s", err)
 	}
 
+	err = db.Ping()
+	if err != nil {
+		log.Fatalf("Failed to ping database: %s", err)
+	}
+
 	err = truncateOutboxTable()
 	if err != nil {
 		log.Fatalf("Failed to truncate outbox table: %s", err)

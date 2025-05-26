@@ -49,4 +49,40 @@ services:
       test: ["CMD", "healthcheck.sh"]
       interval: 30s
       timeout: 10s
-      retries: 5      
+      retries: 5
+
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: outbox_sqlserver
+    environment:
+      ACCEPT_EULA: Y
+      SA_PASSWORD: SqlServer123!
+      MSSQL_PID: Developer
+    ports:
+      - "1433:1433"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P SqlServer123! -Q 'SELECT 1' -C || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+  sqlserver_init_script:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: outbox_sqlserver_init_script
+    volumes:
+      - ./init-scripts/sqlserver:/docker-entrypoint-initdb.d
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    command: >
+      bash -c '
+      /opt/mssql-tools18/bin/sqlcmd -S sqlserver -U sa -P SqlServer123! -d master -i docker-entrypoint-initdb.d/01-create-outbox-table.sql -C;
+      echo "All done!";
+      '
+    healthcheck:
+      test: ["CMD-SHELL", "exit 0"]
+      interval: 1s
+      timeout: 1s
+      retries: 10
+      start_period: 1s

@@ -91,7 +91,7 @@ func TestGetIDType(t *testing.T) {
 		},
 		{
 			driver:   SQLServerDialect,
-			wantType: anyUUID,
+			wantType: anyUUIDBytes,
 		},
 		{
 			driver:   SQLiteDialect,
