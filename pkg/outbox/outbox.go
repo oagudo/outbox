@@ -64,7 +64,7 @@ func formatMessageIDForDB(msg Message) any {
 	}
 }
 
-func getSQLPlaceholder(index int) string { // TODO: extract query logic to SQL Dialect interface
+func getSQLPlaceholder(index int) string {
 	switch o.dbDialect {
 	case PostgresDialect:
 		return fmt.Sprintf("$%d", index)

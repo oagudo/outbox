@@ -188,7 +188,7 @@ func createMessageFixture() outbox.Message {
 	msgID := uuid.New()
 	msgContext := []byte(`{"any_context_key": "any_context_value"}`)
 	msgPayload := []byte(`{"any_payload_key": "any_payload_value"}`)
-	createdAt := time.Now().UTC().Truncate(time.Microsecond)
+	createdAt := time.Now().UTC().Truncate(time.Millisecond)
 
 	return outbox.Message{
 		ID:        msgID,
