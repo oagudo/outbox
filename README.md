@@ -102,7 +102,9 @@ outbox.SetSQLDialect(outbox.MySQLDialect)
 
 The outbox table stores messages that need to be published to your message broker. Choose your database below:
 
-**Quick Start (PostgreSQL - Default)**
+<details>
+<summary><strong>🐘 PostgreSQL (Default dialect)</strong></summary>
+
 ```sql
 CREATE TABLE IF NOT EXISTS Outbox (
     id UUID PRIMARY KEY,
@@ -113,6 +115,7 @@ CREATE TABLE IF NOT EXISTS Outbox (
 
 CREATE INDEX IF NOT EXISTS idx_outbox_created_at ON Outbox (created_at);
 ```
+</details>
 
 <details>
 <summary><strong>📊 MySQL</strong></summary>
