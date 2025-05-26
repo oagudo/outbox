@@ -2,10 +2,10 @@ package outbox
 
 import (
 	"fmt"
+	"reflect"
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestGetSQLPlaceholder(t *testing.T) {
@@ -56,7 +56,9 @@ func TestGetSQLPlaceholder(t *testing.T) {
 			SetSQLDialect(tt.driver)
 
 			got := getSQLPlaceholder(tt.index)
-			assert.Equal(t, tt.wantPlaceholder, got)
+			if got != tt.wantPlaceholder {
+				t.Errorf("getSQLPlaceholder(%d) = %v, want %v", tt.index, got, tt.wantPlaceholder)
+			}
 		})
 	}
 }
@@ -107,7 +109,9 @@ func TestGetIDType(t *testing.T) {
 
 			got := formatMessageIDForDB(testMessage)
 
-			assert.Equal(t, tt.wantType, got)
+			if !reflect.DeepEqual(got, tt.wantType) {
+				t.Errorf("formatMessageIDForDB() = %v, want %v", got, tt.wantType)
+			}
 		})
 	}
 }

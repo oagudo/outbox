@@ -5,8 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	coreSql "github.com/oagudo/outbox/internal/sql"
 )
 
@@ -61,12 +59,22 @@ func TestWriterSucceed(t *testing.T) {
 		return nil
 	})
 
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
 
-	require.True(t, callbackCalled)
-	require.True(t, txProvider.tx.execCalled)
-	require.False(t, txProvider.tx.rolledBack)
-	require.True(t, txProvider.tx.committed)
+	if !callbackCalled {
+		t.Fatal("expected callback to be called")
+	}
+	if !txProvider.tx.execCalled {
+		t.Fatal("expected tx.ExecContext to be called")
+	}
+	if txProvider.tx.rolledBack {
+		t.Fatal("expected tx not to be rolled back")
+	}
+	if !txProvider.tx.committed {
+		t.Fatal("expected tx to be committed")
+	}
 }
 
 func TestWriterErrorOnTxBegin(t *testing.T) {
@@ -74,16 +82,26 @@ func TestWriterErrorOnTxBegin(t *testing.T) {
 	writer := &Writer{sqlExecutor: txProvider}
 
 	err := writer.Write(context.Background(), Message{}, func(_ context.Context, _ TxExecFunc) error {
-		require.Fail(t, "should not be called")
+		t.Fatal("should not be called")
 		return nil
 	})
 
-	require.Error(t, err)
-	require.ErrorIs(t, err, txProvider.beginErr)
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if !errors.Is(err, txProvider.beginErr) {
+		t.Fatalf("expected error to be %v, got: %v", txProvider.beginErr, err)
+	}
 
-	require.False(t, txProvider.tx.execCalled)
-	require.False(t, txProvider.tx.committed)
-	require.False(t, txProvider.tx.rolledBack)
+	if txProvider.tx.execCalled {
+		t.Fatal("expected tx.ExecContext not to be called")
+	}
+	if txProvider.tx.committed {
+		t.Fatal("expected tx not to be committed")
+	}
+	if txProvider.tx.rolledBack {
+		t.Fatal("expected tx not to be rolled back")
+	}
 }
 
 func TestWriterErrorOnTxCommit(t *testing.T) {
@@ -96,10 +114,17 @@ func TestWriterErrorOnTxCommit(t *testing.T) {
 		return nil
 	})
 
-	require.Error(t, err)
-	require.ErrorIs(t, err, txProvider.tx.commitErr)
+	if !errors.Is(err, txProvider.tx.commitErr) {
+		t.Fatalf("expected error to be %v, got: %v", txProvider.tx.commitErr, err)
+	}
 
-	require.True(t, callbackCalled)
-	require.True(t, txProvider.tx.execCalled)
-	require.True(t, txProvider.tx.rolledBack)
+	if !callbackCalled {
+		t.Fatal("expected callback to be called")
+	}
+	if !txProvider.tx.execCalled {
+		t.Fatal("expected tx.ExecContext to be called")
+	}
+	if !txProvider.tx.rolledBack {
+		t.Fatal("expected tx to be rolled back")
+	}
 }

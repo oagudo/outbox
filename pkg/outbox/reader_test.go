@@ -3,8 +3,6 @@ package outbox
 import (
 	"fmt"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
 )
 
 func TestBuildSelectMessagesQuery(t *testing.T) {
@@ -48,7 +46,9 @@ func TestBuildSelectMessagesQuery(t *testing.T) {
 
 			got := buildSelectMessagesQuery()
 
-			assert.Equal(t, tt.wantSQL, got)
+			if got != tt.wantSQL {
+				t.Errorf("buildSelectMessagesQuery() = %v, want %v", got, tt.wantSQL)
+			}
 		})
 	}
 }
