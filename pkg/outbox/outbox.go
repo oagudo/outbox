@@ -69,9 +69,6 @@ func getSQLPlaceholder(index int) string {
 	case PostgresDialect:
 		return fmt.Sprintf("$%d", index)
 
-	case MariaDBDialect, MySQLDialect, SQLiteDialect:
-		return "?"
-
 	case OracleDialect:
 		return fmt.Sprintf(":%d", index)
 
