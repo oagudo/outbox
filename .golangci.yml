@@ -2,7 +2,7 @@ version: "2"
 
 run:
   timeout: 5m
-  go: "1.22.2"  # Adjust this to your project's Go version
+  go: "1.24.3"  # Adjust this to your project's Go version
   tests: true
 
 linters:

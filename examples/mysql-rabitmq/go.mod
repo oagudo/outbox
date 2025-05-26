@@ -1,6 +1,6 @@
 module posgres-kafka-example
 
-go 1.22.2
+go 1.24.3
 
 require (
 	github.com/go-sql-driver/mysql v1.7.1
