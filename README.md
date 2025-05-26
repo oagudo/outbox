@@ -100,10 +100,10 @@ outbox.SetSQLDialect(outbox.MySQLDialect)
 
 #### 2. Create the Outbox Table
 
-Create an outbox table in your database with the following structure. The table stores messages that need to be published to your message broker:
+The outbox table stores messages that need to be published to your message broker. Choose your database below:
 
+**Quick Start (PostgreSQL - Default)**
 ```sql
--- For Postgres
 CREATE TABLE IF NOT EXISTS Outbox (
     id UUID PRIMARY KEY,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
@@ -112,18 +112,12 @@ CREATE TABLE IF NOT EXISTS Outbox (
 );
 
 CREATE INDEX IF NOT EXISTS idx_outbox_created_at ON Outbox (created_at);
+```
 
--- For Oracle
-CREATE TABLE Outbox (
-    id RAW(16) PRIMARY KEY,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL,
-    context BLOB NOT NULL,
-    payload BLOB NOT NULL
-);
+<details>
+<summary><strong>📊 MySQL</strong></summary>
 
-CREATE INDEX idx_outbox_created_at ON Outbox (created_at);
-
--- For MySQL
+```sql
 CREATE TABLE IF NOT EXISTS Outbox (
     id BINARY(16) PRIMARY KEY,
     created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
@@ -132,27 +126,13 @@ CREATE TABLE IF NOT EXISTS Outbox (
 );
 
 CREATE INDEX idx_outbox_created_at ON Outbox (created_at);
+```
+</details>
 
--- For SQL Server
-CREATE TABLE Outbox (
-    id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
-    created_at DATETIME2(3) NOT NULL DEFAULT GETUTCDATE(),
-    context VARBINARY(MAX) NOT NULL,
-    payload VARBINARY(MAX) NOT NULL
-);
+<details>
+<summary><strong>🐬 MariaDB</strong></summary>
 
-CREATE INDEX idx_outbox_created_at ON Outbox (created_at);
-
--- For sqlite
-CREATE TABLE IF NOT EXISTS Outbox (
-    id TEXT PRIMARY KEY,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    context BLOB NOT NULL,
-    payload BLOB NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_outbox_created_at ON Outbox (created_at);
-
--- For MariaDB
+```sql
 CREATE TABLE IF NOT EXISTS Outbox (
     id UUID PRIMARY KEY,
     created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
@@ -162,6 +142,52 @@ CREATE TABLE IF NOT EXISTS Outbox (
 
 CREATE INDEX idx_outbox_created_at ON Outbox (created_at);
 ```
+</details>
+
+<details>
+<summary><strong>🗃️ SQLite</strong></summary>
+
+```sql
+CREATE TABLE IF NOT EXISTS Outbox (
+    id TEXT PRIMARY KEY,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    context BLOB NOT NULL,
+    payload BLOB NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_outbox_created_at ON Outbox (created_at);
+```
+</details>
+
+<details>
+<summary><strong>🏛️ Oracle</strong></summary>
+
+```sql
+CREATE TABLE Outbox (
+    id RAW(16) PRIMARY KEY,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL,
+    context BLOB NOT NULL,
+    payload BLOB NOT NULL
+);
+
+CREATE INDEX idx_outbox_created_at ON Outbox (created_at);
+```
+</details>
+
+<details>
+<summary><strong>🪟 SQL Server</strong></summary>
+
+```sql
+CREATE TABLE Outbox (
+    id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
+    created_at DATETIME2(3) NOT NULL DEFAULT GETUTCDATE(),
+    context VARBINARY(MAX) NOT NULL,
+    payload VARBINARY(MAX) NOT NULL
+);
+
+CREATE INDEX idx_outbox_created_at ON Outbox (created_at);
+```
+</details>
 
 ## Examples
 
