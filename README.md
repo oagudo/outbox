@@ -132,7 +132,7 @@ dbCtx := outbox.NewDBContext(db, outbox.SQLDialectMySQL)
 The outbox table stores messages that need to be published to your message broker. Choose your database below:
 
 <details>
-<summary><strong>🐘 PostgreSQL (Default dialect)</strong></summary>
+<summary><strong>🐘 PostgreSQL</strong></summary>
 
 ```sql
 CREATE TABLE IF NOT EXISTS Outbox (
