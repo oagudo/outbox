@@ -54,10 +54,10 @@ func (o *outbox) setDialect(dialect SQLDialect) {
 
 func formatMessageIDForDB(msg Message) any {
 	switch o.dbDialect {
-	case MySQLDialect, MariaDBDialect, OracleDialect, SQLServerDialect:
+	case MySQLDialect, OracleDialect, SQLServerDialect:
 		bytes, _ := msg.ID.MarshalBinary() // Convert UUID to binary for better storage
 		return bytes
-	case PostgresDialect:
+	case PostgresDialect, MariaDBDialect:
 		return msg.ID // Native support
 	default:
 		return msg.ID.String()

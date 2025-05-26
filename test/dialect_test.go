@@ -14,12 +14,12 @@ import (
 )
 
 func TestDialectSucceeds(t *testing.T) {
-	type test struct {
+	type dialectTestCase struct {
 		openDB  func() (*sql.DB, error)
 		dialect outbox.SQLDialect
 	}
 
-	tests := []test{
+	tests := []dialectTestCase{
 		{
 			openDB: func() (*sql.DB, error) {
 				db, err := sql.Open("mysql", "user:password@tcp(localhost:3306)/outbox?parseTime=true")
@@ -85,6 +85,18 @@ func TestDialectSucceeds(t *testing.T) {
 				return db, nil
 			},
 			dialect: outbox.SQLiteDialect,
+		},
+		{
+			openDB: func() (*sql.DB, error) {
+				db, err := sql.Open("mysql", "user:password@tcp(localhost:3307)/outbox?parseTime=true")
+				if err != nil {
+					return nil, err
+				}
+
+				_, err = db.Exec("TRUNCATE TABLE Outbox")
+				return db, err
+			},
+			dialect: outbox.MariaDBDialect,
 		},
 	}
 	for _, tt := range tests {
