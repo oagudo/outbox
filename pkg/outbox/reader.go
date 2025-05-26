@@ -13,7 +13,8 @@ import (
 type MessagePublisher interface {
 	// Publish sends a message to an external system (like a message broker).
 	// This function can be invoked multiple times for the same message.
-	// Message consumers must be idempotent and not affected by receiving duplicate messages.
+	// Message consumers must be idempotent and not affected by receiving duplicate messages,
+	// though some brokers also provide deduplication features.
 	Publish(ctx context.Context, msg Message) error
 }
 
