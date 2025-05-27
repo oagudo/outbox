@@ -233,7 +233,7 @@ Complete working examples for different databases and message brokers:
 - [Oracle & NATS](./examples/oracle-nats/service.go)
 - [MySQL & RabbitMQ](./examples/mysql-rabbitmq/service.go)
 
-To run them:
+To run an example:
 
 ```bash
 cd examples/postgres-kafka # or examples/oracle-nats or examples/mysql-rabitmq
