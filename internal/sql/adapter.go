@@ -9,9 +9,8 @@ type TxAdapter struct {
 	tx *sql.Tx
 }
 
-func (a *TxAdapter) ExecContext(ctx context.Context, query string, args ...any) error {
-	_, err := a.tx.ExecContext(ctx, query, args...)
-	return err
+func (a *TxAdapter) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	return a.tx.ExecContext(ctx, query, args...)
 }
 
 func (a *TxAdapter) Commit() error {

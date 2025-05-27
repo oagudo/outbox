@@ -51,7 +51,7 @@ entity := Entity{
 entityJSON, _ := json.Marshal(entity)
 msgContext := json.RawMessage(`{"trace_id":"abc123","correlation_id":"xyz789"}`)
 msg := outbox.Message{
-    ID:        entity.ID,
+    ID:        uuid.New(),
     CreatedAt: entity.CreatedAt,
     Payload:   entityJSON,
     Context:   msgContext, // Any relevant metadata for the message
@@ -59,10 +59,11 @@ msg := outbox.Message{
 
 // Write message and entity in a single transaction
 err = writer.Write(ctx, msg, func(ctx context.Context, txExecFunc outbox.TxExecFunc) error {
-    return txExecFunc(ctx, // This query executes within a transaction
+    _, err := txExecFunc(ctx, // This query executes within a transaction
         "INSERT INTO Entity (id, created_at) VALUES (?, ?)",
         entity.ID.String(), entity.CreatedAt,
     )
+    return err
 })
 ```
 

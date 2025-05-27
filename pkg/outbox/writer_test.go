@@ -2,6 +2,7 @@ package outbox
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"testing"
 
@@ -18,9 +19,9 @@ type fakeTx struct {
 	rolledBack bool
 }
 
-func (f *fakeTx) ExecContext(_ context.Context, _ string, _ ...any) error {
+func (f *fakeTx) ExecContext(_ context.Context, _ string, _ ...any) (sql.Result, error) {
 	f.execCalled = true
-	return f.execErr
+	return nil, f.execErr
 }
 
 func (f *fakeTx) Commit() error {

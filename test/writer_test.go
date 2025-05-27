@@ -27,7 +27,7 @@ func TestWriterSuccessfullyWritesToOutbox(t *testing.T) {
 	anyEntity := createEntityFixture()
 
 	err := w.Write(context.Background(), anyMsg, func(ctx context.Context, txExecFunc outbox.TxExecFunc) error {
-		err := txExecFunc(ctx, "INSERT INTO Entity (id, created_at) VALUES ($1, $2)", anyEntity.ID, anyEntity.CreatedAt)
+		_, err := txExecFunc(ctx, "INSERT INTO Entity (id, created_at) VALUES ($1, $2)", anyEntity.ID, anyEntity.CreatedAt)
 		require.NoError(t, err)
 		return nil
 	})
@@ -56,7 +56,7 @@ func TestWriterRollsBackOnOutboxWriteError(t *testing.T) {
 
 	anyEntity := createEntityFixture()
 	err = w.Write(context.Background(), anyMsg, func(ctx context.Context, txExecFunc outbox.TxExecFunc) error {
-		err := txExecFunc(ctx, "INSERT INTO Entity (id, created_at) VALUES ($1, $2)", anyEntity.ID, anyEntity.CreatedAt)
+		_, err := txExecFunc(ctx, "INSERT INTO Entity (id, created_at) VALUES ($1, $2)", anyEntity.ID, anyEntity.CreatedAt)
 		require.NoError(t, err)
 		return nil
 	})

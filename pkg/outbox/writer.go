@@ -2,6 +2,7 @@ package outbox
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"time"
 
@@ -20,7 +21,7 @@ type Writer struct {
 }
 
 // TxExecFunc is a function that executes a SQL query within a transaction.
-type TxExecFunc func(ctx context.Context, query string, args ...any) error
+type TxExecFunc func(ctx context.Context, query string, args ...any) (sql.Result, error)
 
 // WriterTxFunc is a function that executes user-defined queries within the transaction that
 // stores a message in the outbox.
@@ -91,7 +92,7 @@ func (w *Writer) Write(ctx context.Context, msg Message, writerTxFunc WriterTxFu
 
 	query := fmt.Sprintf("INSERT INTO Outbox (id, created_at, context, payload) VALUES (%s, %s, %s, %s)",
 		w.dbCtx.getSQLPlaceholder(1), w.dbCtx.getSQLPlaceholder(2), w.dbCtx.getSQLPlaceholder(3), w.dbCtx.getSQLPlaceholder(4))
-	err = tx.ExecContext(ctx, query, w.dbCtx.formatMessageIDForDB(msg), msg.CreatedAt, msg.Context, msg.Payload)
+	_, err = tx.ExecContext(ctx, query, w.dbCtx.formatMessageIDForDB(msg), msg.CreatedAt, msg.Context, msg.Payload)
 	if err != nil {
 		return fmt.Errorf("failed to store message in outbox: %w", err)
 	}

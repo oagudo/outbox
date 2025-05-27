@@ -154,16 +154,21 @@ func main() {
 			return
 		}
 		msg := outbox.Message{
-			ID:        entity.ID,
+			ID:        uuid.New(),
 			CreatedAt: entity.CreatedAt,
 			Payload:   entityJSON,
 			Context:   msgContextJSON,
 		}
 		err = writer.Write(r.Context(), msg, func(ctx context.Context, txExecFunc outbox.TxExecFunc) error {
-			return txExecFunc(r.Context(),
+			_, err := txExecFunc(r.Context(),
 				"INSERT INTO Entity (id, created_at) VALUES (?, ?)",
 				entity.ID[:], entity.CreatedAt,
 			)
+			if err != nil {
+				log.Printf("failed to write entity: %v", err)
+				return err
+			}
+			return nil
 		})
 		if err != nil {
 			http.Error(w, "failed to write entity", http.StatusInternalServerError)
