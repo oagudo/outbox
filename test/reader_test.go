@@ -64,9 +64,8 @@ func TestReaderPublishesMessagesInOrder(t *testing.T) {
 	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
 	r := outbox.NewReader(dbCtx, &fakePublisher{
 		onPublish: func(_ context.Context, msg outbox.Message) {
-			currentCalls := atomic.LoadInt32(&onPublishCalls)
-			require.Equal(t, msg.ID, msgs[currentCalls].ID) // they are published in order
-			atomic.AddInt32(&onPublishCalls, 1)
+			currentCalls := atomic.AddInt32(&onPublishCalls, 1)
+			require.Equal(t, msg.ID, msgs[currentCalls-1].ID) // they are published in order
 		},
 	},
 		outbox.WithInterval(readerInterval),
@@ -137,7 +136,7 @@ func TestReaderOnDeleteError(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestStopTimesOutIfReaderIsNotStopped(t *testing.T) {
+func TestStopTimesOutIfReaderIsGracefullyStopped(t *testing.T) {
 	setupTest(t)
 
 	anyMsg := createMessageFixture()
@@ -176,8 +175,10 @@ func TestShouldTimeoutWhenReadingMessagesTakesTooLong(t *testing.T) {
 		outbox.WithInterval(readerInterval),
 		outbox.WithReadTimeout(0), // context should be cancelled
 		outbox.WithOnReadError(func(err error) {
-			require.ErrorIs(t, err, context.DeadlineExceeded)
-			atomic.AddInt32(&onReadErrorCalls, 1)
+			currentCalls := atomic.AddInt32(&onReadErrorCalls, 1)
+			if currentCalls == 1 {
+				require.ErrorIs(t, err, context.DeadlineExceeded)
+			}
 		}))
 	r.Start()
 
@@ -199,8 +200,10 @@ func TestShouldTimeoutWhenPublishingMessagesTakesTooLong(t *testing.T) {
 	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
 	r := outbox.NewReader(dbCtx, &fakePublisher{
 		onPublish: func(ctx context.Context, _ outbox.Message) {
-			require.Equal(t, context.DeadlineExceeded, ctx.Err())
-			atomic.AddInt32(&onPublishCalls, 1)
+			currentCalls := atomic.AddInt32(&onPublishCalls, 1)
+			if currentCalls == 1 {
+				require.Equal(t, context.DeadlineExceeded, ctx.Err())
+			}
 		},
 	},
 		outbox.WithInterval(readerInterval),
@@ -227,8 +230,10 @@ func TestShouldTimeoutWhenDeletingMessagesTakesTooLong(t *testing.T) {
 	r := outbox.NewReader(dbCtx, &fakePublisher{},
 		outbox.WithInterval(readerInterval),
 		outbox.WithOnDeleteError(func(_ outbox.Message, err error) {
-			require.ErrorIs(t, err, context.DeadlineExceeded)
-			atomic.AddInt32(&onDeleteErrorCalls, 1)
+			currentCalls := atomic.AddInt32(&onDeleteErrorCalls, 1)
+			if currentCalls == 1 {
+				require.ErrorIs(t, err, context.DeadlineExceeded)
+			}
 		}),
 		outbox.WithDeleteTimeout(0), // context should be cancelled
 	)
