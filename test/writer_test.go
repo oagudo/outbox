@@ -86,20 +86,19 @@ func TestWriterRollsBackOnCallbackError(t *testing.T) {
 }
 
 type fakePublisher struct {
-	publishErr    error
 	publishCalled atomic.Bool
-	onPublish     func(context.Context, outbox.Message)
+	onPublish     func(context.Context, outbox.Message) error
 }
 
 func (p *fakePublisher) Publish(ctx context.Context, msg outbox.Message) error {
 	p.publishCalled.Store(true)
-	if p.onPublish != nil {
-		p.onPublish(ctx, msg)
-	}
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	return p.publishErr
+	if p.onPublish != nil {
+		return p.onPublish(ctx, msg)
+	}
+	return nil
 }
 
 func TestWriterWithOptimisticPublisher(t *testing.T) {
@@ -121,7 +120,11 @@ func TestWriterWithOptimisticPublisher(t *testing.T) {
 	})
 
 	t.Run("does not remove message from outbox if publisher returns an error", func(t *testing.T) {
-		publisher := &fakePublisher{publishErr: errors.New("any publisher error")}
+		publisher := &fakePublisher{
+			onPublish: func(_ context.Context, _ outbox.Message) error {
+				return errors.New("any publisher error")
+			},
+		}
 		dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
 		w := outbox.NewWriter(dbCtx, outbox.WithOptimisticPublisher(publisher))
 
@@ -131,9 +134,7 @@ func TestWriterWithOptimisticPublisher(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		require.Eventually(t, func() bool {
-			return publisher.publishCalled.Load()
-		}, testTimeout, pollInterval)
+		require.Eventually(t, publisher.publishCalled.Load, testTimeout, pollInterval)
 
 		_, found := readOutboxMessage(t, anyMsg.ID)
 		require.True(t, found)
@@ -153,9 +154,7 @@ func TestWriterWithOptimisticPublisher(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		require.Eventually(t, func() bool {
-			return publisher.publishCalled.Load()
-		}, testTimeout, pollInterval)
+		require.Eventually(t, publisher.publishCalled.Load, testTimeout, pollInterval)
 
 		_, found := readOutboxMessage(t, anyMsg.ID)
 		require.True(t, found)

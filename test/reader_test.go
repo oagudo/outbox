@@ -28,8 +28,9 @@ func TestReaderSuccessfullyPublishesMessage(t *testing.T) {
 
 	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
 	r := outbox.NewReader(dbCtx, &fakePublisher{
-		onPublish: func(_ context.Context, msg outbox.Message) {
+		onPublish: func(_ context.Context, msg outbox.Message) error {
 			assertMessageEqual(t, anyMsg, msg)
+			return nil
 		},
 	}, outbox.WithInterval(readerInterval))
 	r.Start()
@@ -64,9 +65,10 @@ func TestReaderPublishesMessagesInOrder(t *testing.T) {
 	var onPublishCalls int32 = 0
 	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
 	r := outbox.NewReader(dbCtx, &fakePublisher{
-		onPublish: func(_ context.Context, msg outbox.Message) {
+		onPublish: func(_ context.Context, msg outbox.Message) error {
 			currentCalls := atomic.AddInt32(&onPublishCalls, 1)
 			require.Equal(t, msg.ID, msgs[currentCalls-1].ID) // they are published in order
+			return nil
 		},
 	},
 		outbox.WithInterval(readerInterval),
@@ -91,9 +93,10 @@ func TestStopTimesOutIfReaderIsGracefullyStopped(t *testing.T) {
 	wg.Add(1)
 	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
 	r := outbox.NewReader(dbCtx, &fakePublisher{
-		onPublish: func(_ context.Context, _ outbox.Message) {
+		onPublish: func(_ context.Context, _ outbox.Message) error {
 			wg.Done() // trigger for stop
 			time.Sleep(100 * time.Millisecond)
+			return nil
 		},
 	}, outbox.WithInterval(readerInterval))
 	r.Start()
@@ -173,7 +176,9 @@ func TestShouldKeepTryingToPublishMessagesAfterError(t *testing.T) {
 
 	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
 	r := outbox.NewReader(dbCtx, &fakePublisher{
-		publishErr: publishErr,
+		onPublish: func(_ context.Context, _ outbox.Message) error {
+			return publishErr
+		},
 	}, outbox.WithInterval(readerInterval))
 	r.Start()
 
@@ -195,9 +200,10 @@ func TestStopCancelsInProgressPublishing(t *testing.T) {
 	var onPublishCalls int32 = 0
 	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
 	r := outbox.NewReader(dbCtx, &fakePublisher{
-		onPublish: func(_ context.Context, _ outbox.Message) {
+		onPublish: func(_ context.Context, _ outbox.Message) error {
 			atomic.AddInt32(&onPublishCalls, 1)
 			time.Sleep(1 * time.Millisecond)
+			return nil
 		},
 	},
 		outbox.WithInterval(readerInterval),
@@ -237,6 +243,47 @@ func TestMultipleStopCalls(t *testing.T) {
 
 	require.NoError(t, r.Stop(context.Background()))
 	require.NoError(t, r.Stop(context.Background())) // Second call to Stop should be a no-op
+}
+
+func TestReaderDiscardsErrorsIfBufferIsFull(t *testing.T) {
+	setupTest(t)
+
+	writeMessage(t, createMessageFixture())
+
+	firstErr := errors.New("first error during publish")
+	secondErr := errors.New("second error during publish")
+	subsequentErr := errors.New("subsequent error during publish")
+
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	onPublishCalls := 0
+	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
+	r := outbox.NewReader(dbCtx, &fakePublisher{
+		onPublish: func(_ context.Context, _ outbox.Message) error {
+			onPublishCalls++
+			if onPublishCalls == 1 {
+				return firstErr
+			}
+			if onPublishCalls == 2 {
+				return secondErr
+			}
+			if onPublishCalls == 3 {
+				wg.Done()
+			}
+			return subsequentErr
+		},
+	},
+		outbox.WithErrorChannelSize(1),
+		outbox.WithInterval(readerInterval),
+	)
+	r.Start()
+
+	wg.Wait()
+
+	waitForReaderError(t, r, outbox.OpPublish, firstErr, nil)
+	waitForReaderError(t, r, outbox.OpPublish, subsequentErr, nil) // second error is be discarded
+
+	require.NoError(t, r.Stop(context.Background()))
 }
 
 func setupTest(t *testing.T) {

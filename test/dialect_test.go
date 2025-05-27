@@ -116,8 +116,9 @@ func TestDialectSucceeds(t *testing.T) {
 			require.NoError(t, err)
 
 			r := outbox.NewReader(dbCtx, &fakePublisher{
-				onPublish: func(_ context.Context, msg outbox.Message) {
+				onPublish: func(_ context.Context, msg outbox.Message) error {
 					assertMessageEqual(t, anyMsg, msg)
+					return nil
 				},
 			}, outbox.WithInterval(readerInterval))
 			r.Start()
