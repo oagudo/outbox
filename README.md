@@ -1,4 +1,7 @@
-# Outbox
+<p align="center" class="disable-logo">
+<a href="#"><img src="assets/logo.png" width="200"/></a>
+</p>
+
 
 [![Release](https://img.shields.io/github/release/oagudo/outbox.svg?style=flat-square)](https://github.com/oagudo/outbox/releases/latest)
 [![Software License](https://img.shields.io/badge/license-MIT-brightgreen.svg?style=flat-square)](LICENSE.md)
