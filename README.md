@@ -120,6 +120,30 @@ reader.Start()
 defer reader.Stop(context.Background()) // Stop during application shutdown
 ```
 
+<details>
+<summary><strong>🚨 Error Handling</strong></summary>
+
+The Reader provides an error channel to monitor failures during message processing:
+
+```go
+reader := outbox.NewReader(dbCtx, &messagePublisher{}, outbox.WithInterval(5*time.Second))
+reader.Start()
+
+go func() {
+    for err := range reader.Errors() {
+        switch err.Op {
+        case outbox.OpRead:    // Failed to read from outbox table
+            log.Printf("Read error: %v", err.Err)
+        case outbox.OpPublish: // Failed to publish message (will retry)
+            log.Printf("Publish error for %s: %v", err.Msg.ID, err.Err)
+        case outbox.OpDelete:  // Failed to delete published message
+            log.Printf("Delete error for %s: %v", err.Msg.ID, err.Err)
+        }
+    }
+}()
+```
+</details>
+
 ### Database Setup
 
 #### 1. Choose Your Database Dialect
