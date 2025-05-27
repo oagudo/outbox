@@ -229,9 +229,9 @@ CREATE INDEX idx_outbox_created_at ON Outbox (created_at);
 
 Complete working examples for different databases and message brokers:
 
-- [Postgres & Kafka](./examples/postgres-kafka/service.go) 
-- [Oracle & NATS](./examples/oracle-nats/service.go) 
-- [MySQL & RabbitMQ](./examples/mysql-rabitmq/service.go) 
+- [Postgres & Kafka](./examples/postgres-kafka/service.go)
+- [Oracle & NATS](./examples/oracle-nats/service.go)
+- [MySQL & RabbitMQ](./examples/mysql-rabbitmq/service.go)
 
 To run them:
 
