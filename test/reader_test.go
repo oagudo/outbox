@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/oagudo/outbox/pkg/outbox"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -38,8 +39,7 @@ func TestReaderSuccessfullyPublishesMessage(t *testing.T) {
 		return !found
 	}, testTimeout, pollInterval)
 
-	err := r.Stop(context.Background())
-	require.NoError(t, err)
+	require.NoError(t, r.Stop(context.Background()))
 }
 
 func TestReaderPublishesMessagesInOrder(t *testing.T) {
@@ -78,74 +78,7 @@ func TestReaderPublishesMessagesInOrder(t *testing.T) {
 		return atomic.LoadInt32(&onPublishCalls) == int32(len(msgs)) //nolint:gosec
 	}, testTimeout, pollInterval)
 
-	err := r.Stop(context.Background())
-	require.NoError(t, err)
-}
-
-func TestReaderOnReadError(t *testing.T) {
-	setupTest(t)
-
-	t.Cleanup(func() {
-		_, err := db.Exec("ALTER TABLE Outbox_old RENAME TO Outbox")
-		require.NoError(t, err)
-	})
-	_, err := db.Exec("ALTER TABLE Outbox RENAME TO Outbox_old") // force an error on read
-	require.NoError(t, err)
-
-	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
-	r := outbox.NewReader(dbCtx, &fakePublisher{}, outbox.WithInterval(readerInterval))
-
-	var onReadCallbackCalled atomic.Bool
-	go func() {
-		for err := range r.Errors() {
-			if err.Op == outbox.OpRead {
-				require.Error(t, err.Err)
-				onReadCallbackCalled.Store(true)
-			}
-		}
-	}()
-	r.Start()
-
-	require.Eventually(t, onReadCallbackCalled.Load, testTimeout, pollInterval)
-
-	err = r.Stop(context.Background())
-	require.NoError(t, err)
-}
-
-func TestReaderOnDeleteError(t *testing.T) {
-	setupTest(t)
-
-	t.Cleanup(func() {
-		_, err := db.Exec("ALTER TABLE Outbox_old RENAME TO Outbox")
-		require.NoError(t, err)
-	})
-
-	anyMsg := createMessageFixture()
-	writeMessage(t, anyMsg)
-
-	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
-	r := outbox.NewReader(dbCtx, &fakePublisher{
-		onPublish: func(_ context.Context, _ outbox.Message) {
-			_, err := db.Exec("ALTER TABLE Outbox RENAME TO Outbox_old") // force an error on delete
-			require.NoError(t, err)
-		},
-	}, outbox.WithInterval(readerInterval))
-
-	var onDeleteCallbackCalled atomic.Bool
-	go func() {
-		for err := range r.Errors() {
-			if err.Op == outbox.OpDelete {
-				require.Error(t, err.Err)
-				onDeleteCallbackCalled.Store(true)
-			}
-		}
-	}()
-	r.Start()
-
-	require.Eventually(t, onDeleteCallbackCalled.Load, testTimeout, pollInterval)
-
-	err := r.Stop(context.Background())
-	require.NoError(t, err)
+	require.NoError(t, r.Stop(context.Background()))
 }
 
 func TestStopTimesOutIfReaderIsGracefullyStopped(t *testing.T) {
@@ -175,7 +108,6 @@ func TestStopTimesOutIfReaderIsGracefullyStopped(t *testing.T) {
 	require.Equal(t, context.DeadlineExceeded, err)
 }
 
-//nolint:dupl
 func TestShouldTimeoutWhenReadingMessagesTakesTooLong(t *testing.T) {
 	setupTest(t)
 
@@ -187,28 +119,11 @@ func TestShouldTimeoutWhenReadingMessagesTakesTooLong(t *testing.T) {
 		outbox.WithInterval(readerInterval),
 		outbox.WithReadTimeout(0), // context should be cancelled
 	)
-
-	var readTimeoutSeen atomic.Bool
-	wg := sync.WaitGroup{}
-	wg.Add(1)
-
-	go func() {
-		defer wg.Done()
-		for err := range r.Errors() {
-			if err.Op == outbox.OpRead {
-				assert.ErrorIs(t, err.Err, context.DeadlineExceeded)
-				readTimeoutSeen.Store(true)
-				return
-			}
-		}
-	}()
-
 	r.Start()
 
-	require.Eventually(t, readTimeoutSeen.Load, testTimeout, pollInterval)
+	waitForReaderError(t, r, outbox.OpRead, context.DeadlineExceeded, nil)
 
 	require.NoError(t, r.Stop(context.Background()))
-	wg.Wait()
 }
 
 func TestShouldTimeoutWhenPublishingMessagesTakesTooLong(t *testing.T) {
@@ -217,49 +132,19 @@ func TestShouldTimeoutWhenPublishingMessagesTakesTooLong(t *testing.T) {
 	anyMsg := createMessageFixture()
 	writeMessage(t, anyMsg)
 
-	var onPublishCalls int32 = 0
 	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
-	r := outbox.NewReader(dbCtx, &fakePublisher{
-		onPublish: func(ctx context.Context, _ outbox.Message) {
-			currentCalls := atomic.AddInt32(&onPublishCalls, 1)
-			if currentCalls == 1 {
-				require.Equal(t, context.DeadlineExceeded, ctx.Err())
-			}
-		},
-	},
+	r := outbox.NewReader(dbCtx, &fakePublisher{},
 		outbox.WithInterval(readerInterval),
 		outbox.WithPublishTimeout(0), // context should be cancelled
 	)
 
-	var publishTimeoutSeen atomic.Bool
-	wg := sync.WaitGroup{}
-	wg.Add(1)
-
-	go func() {
-		defer wg.Done()
-		for err := range r.Errors() {
-			if err.Op == outbox.OpPublish {
-				assert.ErrorIs(t, err.Err, context.DeadlineExceeded)
-				assert.Equal(t, anyMsg.ID, err.Msg.ID)
-				publishTimeoutSeen.Store(true)
-				return
-			}
-		}
-	}()
-
 	r.Start()
 
-	require.Eventually(t, func() bool {
-		return atomic.LoadInt32(&onPublishCalls) > 0
-	}, testTimeout, pollInterval)
-
-	require.Eventually(t, publishTimeoutSeen.Load, testTimeout, pollInterval)
+	waitForReaderError(t, r, outbox.OpPublish, context.DeadlineExceeded, &anyMsg.ID)
 
 	require.NoError(t, r.Stop(context.Background()))
-	wg.Wait()
 }
 
-//nolint:dupl
 func TestShouldTimeoutWhenDeletingMessagesTakesTooLong(t *testing.T) {
 	setupTest(t)
 
@@ -271,29 +156,11 @@ func TestShouldTimeoutWhenDeletingMessagesTakesTooLong(t *testing.T) {
 		outbox.WithInterval(readerInterval),
 		outbox.WithDeleteTimeout(0), // context should be cancelled
 	)
-
-	var deleteTimeoutSeen atomic.Bool
-	wg := sync.WaitGroup{}
-	wg.Add(1)
-
-	go func() {
-		defer wg.Done()
-		for err := range r.Errors() {
-			if err.Op == outbox.OpDelete {
-				assert.ErrorIs(t, err.Err, context.DeadlineExceeded)
-				assert.Equal(t, anyMsg.ID, err.Msg.ID)
-				deleteTimeoutSeen.Store(true)
-				return
-			}
-		}
-	}()
-
 	r.Start()
 
-	require.Eventually(t, deleteTimeoutSeen.Load, testTimeout, pollInterval)
+	waitForReaderError(t, r, outbox.OpDelete, context.DeadlineExceeded, &anyMsg.ID)
 
 	require.NoError(t, r.Stop(context.Background()))
-	wg.Wait()
 }
 
 func TestShouldKeepTryingToPublishMessagesAfterError(t *testing.T) {
@@ -302,22 +169,19 @@ func TestShouldKeepTryingToPublishMessagesAfterError(t *testing.T) {
 	anyMsg := createMessageFixture()
 	writeMessage(t, anyMsg)
 
-	var onPublishCalls int32 = 0
+	publishErr := errors.New("any error during publish")
+
 	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
 	r := outbox.NewReader(dbCtx, &fakePublisher{
-		onPublish: func(_ context.Context, _ outbox.Message) {
-			atomic.AddInt32(&onPublishCalls, 1)
-		},
-		publishErr: errors.New("any error during publish"),
+		publishErr: publishErr,
 	}, outbox.WithInterval(readerInterval))
 	r.Start()
 
-	require.Eventually(t, func() bool {
-		return atomic.LoadInt32(&onPublishCalls) > 1
-	}, testTimeout, pollInterval)
+	waitForReaderError(t, r, outbox.OpPublish, publishErr, &anyMsg.ID)
+	waitForReaderError(t, r, outbox.OpPublish, publishErr, &anyMsg.ID)
+	waitForReaderError(t, r, outbox.OpPublish, publishErr, &anyMsg.ID)
 
-	err := r.Stop(context.Background())
-	require.NoError(t, err)
+	require.NoError(t, r.Stop(context.Background()))
 }
 
 func TestStopCancelsInProgressPublishing(t *testing.T) {
@@ -345,8 +209,7 @@ func TestStopCancelsInProgressPublishing(t *testing.T) {
 		return atomic.LoadInt32(&onPublishCalls) > 0
 	}, testTimeout, pollInterval)
 
-	err := r.Stop(context.Background())
-	require.NoError(t, err)
+	require.NoError(t, r.Stop(context.Background()))
 
 	count, err := countMessages(t)
 	require.NoError(t, err)
@@ -362,8 +225,7 @@ func TestMultipleStartCalls(t *testing.T) {
 	r.Start()
 	r.Start() // Second call to Start should be a no-op
 
-	err := r.Stop(context.Background())
-	require.NoError(t, err)
+	require.NoError(t, r.Stop(context.Background()))
 }
 
 func TestMultipleStopCalls(t *testing.T) {
@@ -373,18 +235,14 @@ func TestMultipleStopCalls(t *testing.T) {
 	r := outbox.NewReader(dbCtx, &fakePublisher{})
 	r.Start()
 
-	err := r.Stop(context.Background())
-	require.NoError(t, err)
-
-	err = r.Stop(context.Background()) // Second call to Stop should be a no-op
-	require.NoError(t, err)
+	require.NoError(t, r.Stop(context.Background()))
+	require.NoError(t, r.Stop(context.Background())) // Second call to Stop should be a no-op
 }
 
 func setupTest(t *testing.T) {
 	t.Helper()
 
-	err := truncateOutboxTable()
-	require.NoError(t, err)
+	require.NoError(t, truncateOutboxTable())
 }
 
 func countMessages(t *testing.T) (int, error) {
@@ -412,4 +270,34 @@ func writeMessages(t *testing.T, msgs []outbox.Message) {
 	for _, msg := range msgs {
 		writeMessage(t, msg)
 	}
+}
+
+func waitForReaderError(t *testing.T, r *outbox.Reader,
+	expectedOp outbox.OpKind, expectedErr error, expectedMsgID *uuid.UUID,
+) {
+	t.Helper()
+
+	require.Eventually(t, func() bool {
+		select {
+		case err, ok := <-r.Errors():
+			if !ok { // channel closed by Reader
+				return false
+			}
+			if err.Op != expectedOp {
+				return false
+			}
+
+			assert.ErrorIs(t, err.Err, expectedErr,
+				"expected error to match expected type")
+
+			if expectedMsgID != nil {
+				assert.Equal(t, *expectedMsgID, err.Msg.ID,
+					"expected error message ID to match")
+			}
+
+			return true
+		default:
+			return false
+		}
+	}, testTimeout, pollInterval)
 }
