@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/oagudo/outbox/pkg/outbox"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -91,13 +92,18 @@ func TestReaderOnReadError(t *testing.T) {
 	_, err := db.Exec("ALTER TABLE Outbox RENAME TO Outbox_old") // force an error on read
 	require.NoError(t, err)
 
-	var onReadCallbackCalled atomic.Bool
 	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
-	r := outbox.NewReader(dbCtx, &fakePublisher{}, outbox.WithInterval(readerInterval),
-		outbox.WithOnReadError(func(err error) {
-			require.Error(t, err)
-			onReadCallbackCalled.Store(true)
-		}))
+	r := outbox.NewReader(dbCtx, &fakePublisher{}, outbox.WithInterval(readerInterval))
+
+	var onReadCallbackCalled atomic.Bool
+	go func() {
+		for err := range r.Errors() {
+			if err.Op == outbox.OpRead {
+				require.Error(t, err.Err)
+				onReadCallbackCalled.Store(true)
+			}
+		}
+	}()
 	r.Start()
 
 	require.Eventually(t, onReadCallbackCalled.Load, testTimeout, pollInterval)
@@ -117,17 +123,23 @@ func TestReaderOnDeleteError(t *testing.T) {
 	anyMsg := createMessageFixture()
 	writeMessage(t, anyMsg)
 
-	var onDeleteCallbackCalled atomic.Bool
 	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
 	r := outbox.NewReader(dbCtx, &fakePublisher{
 		onPublish: func(_ context.Context, _ outbox.Message) {
 			_, err := db.Exec("ALTER TABLE Outbox RENAME TO Outbox_old") // force an error on delete
 			require.NoError(t, err)
 		},
-	}, outbox.WithInterval(readerInterval), outbox.WithOnDeleteError(func(_ outbox.Message, err error) {
-		require.Error(t, err)
-		onDeleteCallbackCalled.Store(true)
-	}))
+	}, outbox.WithInterval(readerInterval))
+
+	var onDeleteCallbackCalled atomic.Bool
+	go func() {
+		for err := range r.Errors() {
+			if err.Op == outbox.OpDelete {
+				require.Error(t, err.Err)
+				onDeleteCallbackCalled.Store(true)
+			}
+		}
+	}()
 	r.Start()
 
 	require.Eventually(t, onDeleteCallbackCalled.Load, testTimeout, pollInterval)
@@ -163,31 +175,40 @@ func TestStopTimesOutIfReaderIsGracefullyStopped(t *testing.T) {
 	require.Equal(t, context.DeadlineExceeded, err)
 }
 
+//nolint:dupl
 func TestShouldTimeoutWhenReadingMessagesTakesTooLong(t *testing.T) {
 	setupTest(t)
 
 	anyMsg := createMessageFixture()
 	writeMessage(t, anyMsg)
 
-	var onReadErrorCalls int32 = 0
 	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
 	r := outbox.NewReader(dbCtx, &fakePublisher{},
 		outbox.WithInterval(readerInterval),
 		outbox.WithReadTimeout(0), // context should be cancelled
-		outbox.WithOnReadError(func(err error) {
-			currentCalls := atomic.AddInt32(&onReadErrorCalls, 1)
-			if currentCalls == 1 {
-				require.ErrorIs(t, err, context.DeadlineExceeded)
+	)
+
+	var readTimeoutSeen atomic.Bool
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		for err := range r.Errors() {
+			if err.Op == outbox.OpRead {
+				assert.ErrorIs(t, err.Err, context.DeadlineExceeded)
+				readTimeoutSeen.Store(true)
+				return
 			}
-		}))
+		}
+	}()
+
 	r.Start()
 
-	require.Eventually(t, func() bool {
-		return atomic.LoadInt32(&onReadErrorCalls) > 0
-	}, testTimeout, pollInterval)
+	require.Eventually(t, readTimeoutSeen.Load, testTimeout, pollInterval)
 
-	err := r.Stop(context.Background())
-	require.NoError(t, err)
+	require.NoError(t, r.Stop(context.Background()))
+	wg.Wait()
 }
 
 func TestShouldTimeoutWhenPublishingMessagesTakesTooLong(t *testing.T) {
@@ -209,42 +230,70 @@ func TestShouldTimeoutWhenPublishingMessagesTakesTooLong(t *testing.T) {
 		outbox.WithInterval(readerInterval),
 		outbox.WithPublishTimeout(0), // context should be cancelled
 	)
+
+	var publishTimeoutSeen atomic.Bool
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		for err := range r.Errors() {
+			if err.Op == outbox.OpPublish {
+				assert.ErrorIs(t, err.Err, context.DeadlineExceeded)
+				assert.Equal(t, anyMsg.ID, err.Msg.ID)
+				publishTimeoutSeen.Store(true)
+				return
+			}
+		}
+	}()
+
 	r.Start()
 
 	require.Eventually(t, func() bool {
 		return atomic.LoadInt32(&onPublishCalls) > 0
 	}, testTimeout, pollInterval)
 
-	err := r.Stop(context.Background())
-	require.NoError(t, err)
+	require.Eventually(t, publishTimeoutSeen.Load, testTimeout, pollInterval)
+
+	require.NoError(t, r.Stop(context.Background()))
+	wg.Wait()
 }
 
+//nolint:dupl
 func TestShouldTimeoutWhenDeletingMessagesTakesTooLong(t *testing.T) {
 	setupTest(t)
 
 	anyMsg := createMessageFixture()
 	writeMessage(t, anyMsg)
 
-	var onDeleteErrorCalls int32 = 0
 	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
 	r := outbox.NewReader(dbCtx, &fakePublisher{},
 		outbox.WithInterval(readerInterval),
-		outbox.WithOnDeleteError(func(_ outbox.Message, err error) {
-			currentCalls := atomic.AddInt32(&onDeleteErrorCalls, 1)
-			if currentCalls == 1 {
-				require.ErrorIs(t, err, context.DeadlineExceeded)
-			}
-		}),
 		outbox.WithDeleteTimeout(0), // context should be cancelled
 	)
+
+	var deleteTimeoutSeen atomic.Bool
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		for err := range r.Errors() {
+			if err.Op == outbox.OpDelete {
+				assert.ErrorIs(t, err.Err, context.DeadlineExceeded)
+				assert.Equal(t, anyMsg.ID, err.Msg.ID)
+				deleteTimeoutSeen.Store(true)
+				return
+			}
+		}
+	}()
+
 	r.Start()
 
-	require.Eventually(t, func() bool {
-		return atomic.LoadInt32(&onDeleteErrorCalls) > 0
-	}, testTimeout, pollInterval)
+	require.Eventually(t, deleteTimeoutSeen.Load, testTimeout, pollInterval)
 
-	err := r.Stop(context.Background())
-	require.NoError(t, err)
+	require.NoError(t, r.Stop(context.Background()))
+	wg.Wait()
 }
 
 func TestShouldKeepTryingToPublishMessagesAfterError(t *testing.T) {

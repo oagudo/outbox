@@ -17,21 +17,27 @@ type MessagePublisher interface {
 	Publish(ctx context.Context, msg Message) error
 }
 
-// OnReadErrorFunc is a function called when an error occurs while reading messages from the outbox.
-type OnReadErrorFunc func(error)
+// OpKind represents the type of operation that failed.
+type OpKind uint8
 
-// OnMessageErrorFunc is a function called when an error occurs while deleting a message from the outbox
-// after it has been successfully published.
-type OnMessageErrorFunc func(Message, error)
+const (
+	OpRead    OpKind = iota // reading messages from the outbox
+	OpPublish               // publishing messages to the external system
+	OpDelete                // deleting messages from the outbox
+)
+
+// ReaderError represents an error that occurred during a reader operation.
+type ReaderError struct {
+	Op  OpKind
+	Msg Message // zero value when Op == OpRead
+	Err error
+}
 
 // Reader periodically reads unpublished messages from the outbox table
 // and attempts to publish them to an external system.
 type Reader struct {
 	dbCtx        *DBContext
 	msgPublisher MessagePublisher
-
-	onDeleteErrorCallback OnMessageErrorFunc
-	onReadErrorCallback   OnReadErrorFunc
 
 	interval       time.Duration
 	readTimeout    time.Duration
@@ -44,6 +50,7 @@ type Reader struct {
 	ctx     context.Context
 	cancel  context.CancelFunc
 	wg      sync.WaitGroup
+	errCh   chan ReaderError
 }
 
 // ReaderOption is a function that configures a Reader instance.
@@ -82,32 +89,24 @@ func WithDeleteTimeout(timeout time.Duration) ReaderOption {
 }
 
 // WithMaxMessages sets the maximum number of messages to process in a single batch.
-// Default is 100 messages.
+// Default is 100 messages. Must be positive.
 func WithMaxMessages(maxMessages int) ReaderOption {
 	return func(r *Reader) {
-		r.maxMessages = maxMessages
+		if maxMessages > 0 {
+			r.maxMessages = maxMessages
+		}
 	}
 }
 
-// WithOnDeleteError sets a callback function that is called when an error occurs
-// while deleting a message from the outbox after it has been successfully published.
-func WithOnDeleteError(callback OnMessageErrorFunc) ReaderOption {
+// WithErrorChannelSize sets the size of the error channel.
+// Default is 128. Size must be positive.
+func WithErrorChannelSize(size int) ReaderOption {
 	return func(r *Reader) {
-		r.onDeleteErrorCallback = callback
+		if size > 0 {
+			r.errCh = make(chan ReaderError, size)
+		}
 	}
 }
-
-// WithOnReadError sets a callback function that is called when an error occurs
-// while reading messages from the outbox.
-func WithOnReadError(callback OnReadErrorFunc) ReaderOption {
-	return func(r *Reader) {
-		r.onReadErrorCallback = callback
-	}
-}
-
-func noOpMessageErrorFunc(Message, error) {}
-
-func noOpReadErrorFunc(error) {}
 
 // NewReader creates a new outbox Reader with the given database context,
 // message publisher, and options.
@@ -115,19 +114,16 @@ func NewReader(dbCtx *DBContext, msgPublisher MessagePublisher, opts ...ReaderOp
 	ctx, cancel := context.WithCancel(context.Background())
 
 	r := &Reader{
-		dbCtx:        dbCtx,
-		msgPublisher: msgPublisher,
-		ctx:          ctx,
-		cancel:       cancel,
-
+		dbCtx:          dbCtx,
+		msgPublisher:   msgPublisher,
+		ctx:            ctx,
+		cancel:         cancel,
 		interval:       10 * time.Second,
 		readTimeout:    5 * time.Second,
 		publishTimeout: 5 * time.Second,
 		deleteTimeout:  5 * time.Second,
 		maxMessages:    100,
-
-		onDeleteErrorCallback: noOpMessageErrorFunc,
-		onReadErrorCallback:   noOpReadErrorFunc,
+		errCh:          make(chan ReaderError, 128),
 	}
 
 	for _, opt := range opts {
@@ -148,8 +144,10 @@ func (r *Reader) Start() {
 	r.wg.Add(1)
 	go func() {
 		ticker := time.NewTicker(r.interval)
-		defer ticker.Stop()
+
 		defer r.wg.Done()
+		defer close(r.errCh)
+		defer ticker.Stop()
 
 		for {
 			select {
@@ -191,22 +189,41 @@ func (r *Reader) Stop(ctx context.Context) error {
 	}
 }
 
+// Errors returns a channel that receives errors from the outbox reader.
+// The channel is buffered to prevent blocking the reader. If the buffer becomes
+// full, subsequent errors will be dropped to maintain reader throughput.
+// The channel is closed when the reader is stopped.
+//
+// Consumers should drain this channel promptly to avoid missing errors.
+func (r *Reader) Errors() <-chan ReaderError {
+	return r.errCh
+}
+
+func (r *Reader) sendError(err ReaderError) {
+	select {
+	case r.errCh <- err:
+	default:
+		// Channel buffer full, drop the error to prevent blocking
+	}
+}
+
 func (r *Reader) publishMessages() {
 	msgs, err := r.readOutboxMessages()
 	if err != nil {
-		r.onReadErrorCallback(err)
+		r.sendError(ReaderError{Op: OpRead, Err: err})
 		return
 	}
 
 	for _, msg := range msgs {
 		err := r.publishMessage(msg)
 		if err != nil {
+			r.sendError(ReaderError{Op: OpPublish, Msg: msg, Err: err})
 			continue
 		}
 
 		err = r.deleteMessage(msg)
 		if err != nil {
-			r.onDeleteErrorCallback(msg, err)
+			r.sendError(ReaderError{Op: OpDelete, Msg: msg, Err: err})
 		}
 	}
 }
