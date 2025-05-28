@@ -112,10 +112,11 @@ func (p *messagePublisher) Publish(ctx context.Context, msg outbox.Message) erro
 
 // Create and start the reader
 reader := outbox.NewReader(
-    dbCtx,                              // DBContext instance
-    &messagePublisher{},                // Your publisher implementation
-    outbox.WithInterval(5*time.Second), // Optional: polling interval (default: 10s)
-    outbox.WithDeleteBatchSize(10),     // Optional: batch delete size (default: 1 - immediate deletion after publish)
+    dbCtx,                              // Database context
+    &messagePublisher{},                // Publisher implementation
+    outbox.WithInterval(5*time.Second), // Polling interval (default: 10s)
+    outbox.WithMaxMessages(200),        // Read batch size (default: 100)
+    outbox.WithDeleteBatchSize(50),     // Delete batch size (default: 1)
 )
 reader.Start()
 defer reader.Stop(context.Background()) // Stop during application shutdown
