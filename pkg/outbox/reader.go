@@ -89,12 +89,12 @@ func WithDeleteTimeout(timeout time.Duration) ReaderOption {
 	}
 }
 
-// WithMaxMessages sets the maximum number of messages to process in a single batch.
+// WithReadBatchSize sets the maximum number of messages to process in a single batch.
 // Default is 100 messages. Must be positive.
-func WithMaxMessages(maxMessages int) ReaderOption {
+func WithReadBatchSize(batchSize int) ReaderOption {
 	return func(r *Reader) {
-		if maxMessages > 0 {
-			r.maxMessages = maxMessages
+		if batchSize > 0 {
+			r.maxMessages = batchSize
 		}
 	}
 }

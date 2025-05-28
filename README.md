@@ -115,7 +115,7 @@ reader := outbox.NewReader(
     dbCtx,                              // Database context
     &messagePublisher{},                // Publisher implementation
     outbox.WithInterval(5*time.Second), // Polling interval (default: 10s)
-    outbox.WithMaxMessages(200),        // Read batch size (default: 100)
+    outbox.WithReadBatchSize(200),      // Read batch size (default: 100)
     outbox.WithDeleteBatchSize(50),     // Delete batch size (default: 1)
 )
 reader.Start()

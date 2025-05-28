@@ -70,7 +70,7 @@ func TestReaderPublishesMessagesInOrder(t *testing.T) {
 		},
 	},
 		outbox.WithInterval(readerInterval),
-		outbox.WithMaxMessages(1),
+		outbox.WithReadBatchSize(1),
 	)
 	r.Start()
 
@@ -215,7 +215,7 @@ func TestStopCancelsInProgressPublishing(t *testing.T) {
 		},
 	},
 		outbox.WithInterval(readerInterval),
-		outbox.WithMaxMessages(maxMessages),
+		outbox.WithReadBatchSize(maxMessages),
 	)
 	r.Start()
 
@@ -311,7 +311,7 @@ func TestReaderDeletesMessagesInBatches(t *testing.T) {
 	},
 		outbox.WithInterval(readerInterval),
 		outbox.WithDeleteBatchSize(deleteBatchSize),
-		outbox.WithMaxMessages(deleteBatchSize*2),
+		outbox.WithReadBatchSize(deleteBatchSize*2),
 	)
 	r.Start()
 
@@ -346,7 +346,7 @@ func TestReaderDeletesAllPublishedMessagesAfterIterationEvenIfBatchSizeIsNotReac
 	},
 		outbox.WithInterval(readerInterval),
 		outbox.WithDeleteBatchSize(deleteBatchSize),
-		outbox.WithMaxMessages(deleteBatchSize*2),
+		outbox.WithReadBatchSize(deleteBatchSize*2),
 	)
 	r.Start()
 
