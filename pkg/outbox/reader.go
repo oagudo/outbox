@@ -269,11 +269,10 @@ func (r *Reader) publishMessages() {
 		}
 	}
 
-	if len(msgsToDelete) > 0 { // delete remaining messages as next tick would read them again otherwise
-		err = r.deleteMessagesInBatch(msgsToDelete)
-		if err != nil {
-			r.sendError(ReaderError{Op: OpDelete, Err: err})
-		}
+	// delete remaining messages as next tick would read them again otherwise
+	err = r.deleteMessagesInBatch(msgsToDelete)
+	if err != nil {
+		r.sendError(ReaderError{Op: OpDelete, Err: err})
 	}
 }
 
@@ -289,7 +288,7 @@ func (r *Reader) deleteMessagesInBatch(batch []Message) error {
 		return nil
 	}
 
-	// Do not use parent r.ctx, when reader is stopped we want to wait for the delete to complete
+	// Do not use parent r.ctx, when reader is stopped we want to wait for the deletion to complete
 	ctx, cancel := context.WithTimeout(context.Background(), r.deleteTimeout)
 	defer cancel()
 
