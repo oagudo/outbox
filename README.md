@@ -137,9 +137,9 @@ go func() {
         case outbox.OpRead:    // Failed to read from outbox table
             log.Printf("Read error: %v", err.Err)
         case outbox.OpPublish: // Failed to publish message (will retry)
-            log.Printf("Publish error for %s: %v", err.Msg.ID, err.Err)
-        case outbox.OpDelete:  // Failed to delete published message
-            log.Printf("Delete error for %s: %v", err.Msg.ID, err.Err)
+            log.Printf("Publish error: %v", err.Err)
+        case outbox.OpDelete:  // Failed to delete message(s)
+            log.Printf("Delete error: %v", err.Err)
         }
     }
 }()
