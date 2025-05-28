@@ -3,6 +3,7 @@ package outbox
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -29,7 +30,6 @@ const (
 // ReaderError represents an error that occurred during a reader operation.
 type ReaderError struct {
 	Op  OpKind
-	Msg Message // zero value when Op == OpRead
 	Err error
 }
 
@@ -39,11 +39,12 @@ type Reader struct {
 	dbCtx        *DBContext
 	msgPublisher MessagePublisher
 
-	interval       time.Duration
-	readTimeout    time.Duration
-	publishTimeout time.Duration
-	deleteTimeout  time.Duration
-	maxMessages    int
+	interval        time.Duration
+	readTimeout     time.Duration
+	publishTimeout  time.Duration
+	deleteTimeout   time.Duration
+	maxMessages     int
+	deleteBatchSize int
 
 	started int32
 	closed  int32
@@ -108,26 +109,59 @@ func WithErrorChannelSize(size int) ReaderOption {
 	}
 }
 
+// WithDeleteBatchSize sets the number of successfully published messages to accumulate
+// before executing a batch delete operation from the outbox table.
+//
+// The reader processes messages sequentially: for each message, it attempts to publish
+// and then accumulates successfully published messages for deletion. When the batch
+// reaches the specified size, all messages in the batch are deleted in a single
+// database operation.
+//
+// Performance considerations:
+//   - Larger batch sizes reduce database round trips but increase memory usage
+//   - Smaller batch sizes provide faster cleanup but more frequent database operations
+//   - A batch size of 1 deletes each message immediately after successful publication
+//
+// Behavior:
+//   - Only successfully published messages are added to the delete batch
+//   - Failed publications do not affect the batch; those messages remain in the outbox
+//   - At the end of each processing cycle, any remaining messages in the batch are
+//     deleted regardless of batch size to prevent reprocessing
+//   - If fewer messages exist than the batch size, they are still deleted in one operation
+//
+// Default is 1. Size must be positive.
+func WithDeleteBatchSize(size int) ReaderOption {
+	return func(r *Reader) {
+		if size > 0 {
+			r.deleteBatchSize = size
+		}
+	}
+}
+
 // NewReader creates a new outbox Reader with the given database context,
 // message publisher, and options.
 func NewReader(dbCtx *DBContext, msgPublisher MessagePublisher, opts ...ReaderOption) *Reader {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	r := &Reader{
-		dbCtx:          dbCtx,
-		msgPublisher:   msgPublisher,
-		ctx:            ctx,
-		cancel:         cancel,
-		interval:       10 * time.Second,
-		readTimeout:    5 * time.Second,
-		publishTimeout: 5 * time.Second,
-		deleteTimeout:  5 * time.Second,
-		maxMessages:    100,
-		errCh:          make(chan ReaderError, 128),
+		dbCtx:           dbCtx,
+		msgPublisher:    msgPublisher,
+		ctx:             ctx,
+		cancel:          cancel,
+		interval:        10 * time.Second,
+		readTimeout:     5 * time.Second,
+		publishTimeout:  5 * time.Second,
+		deleteTimeout:   5 * time.Second,
+		maxMessages:     100,
+		deleteBatchSize: 1,
 	}
 
 	for _, opt := range opts {
 		opt(r)
+	}
+
+	if r.errCh == nil {
+		r.errCh = make(chan ReaderError, 128)
 	}
 
 	return r
@@ -211,19 +245,34 @@ func (r *Reader) publishMessages() {
 	msgs, err := r.readOutboxMessages()
 	if err != nil {
 		r.sendError(ReaderError{Op: OpRead, Err: err})
-		return
 	}
+
+	msgsToDelete := make([]Message, 0, r.deleteBatchSize)
 
 	for _, msg := range msgs {
 		err := r.publishMessage(msg)
 		if err != nil {
-			r.sendError(ReaderError{Op: OpPublish, Msg: msg, Err: err})
+			r.sendError(ReaderError{Op: OpPublish, Err: err})
 			continue
 		}
 
-		err = r.deleteMessage(msg)
+		msgsToDelete = append(msgsToDelete, msg)
+		if len(msgsToDelete) < r.deleteBatchSize {
+			continue
+		}
+
+		err = r.deleteMessagesInBatch(msgsToDelete)
 		if err != nil {
-			r.sendError(ReaderError{Op: OpDelete, Msg: msg, Err: err})
+			r.sendError(ReaderError{Op: OpDelete, Err: err})
+		} else {
+			msgsToDelete = make([]Message, 0, r.deleteBatchSize)
+		}
+	}
+
+	if len(msgsToDelete) > 0 { // delete remaining messages as next tick would read them again otherwise
+		err = r.deleteMessagesInBatch(msgsToDelete)
+		if err != nil {
+			r.sendError(ReaderError{Op: OpDelete, Err: err})
 		}
 	}
 }
@@ -235,15 +284,26 @@ func (r *Reader) publishMessage(msg Message) error {
 	return r.msgPublisher.Publish(ctx, msg)
 }
 
-func (r *Reader) deleteMessage(msg Message) error {
-	ctx, cancel := context.WithTimeout(r.ctx, r.deleteTimeout)
+func (r *Reader) deleteMessagesInBatch(batch []Message) error {
+	if len(batch) == 0 {
+		return nil
+	}
+
+	// Do not use parent r.ctx, when reader is stopped we want to wait for the delete to complete
+	ctx, cancel := context.WithTimeout(context.Background(), r.deleteTimeout)
 	defer cancel()
 
+	placeholders := make([]string, 0, len(batch))
+	ids := make([]any, 0, len(batch))
+	for idx, msg := range batch {
+		placeholders = append(placeholders, r.dbCtx.getSQLPlaceholder(idx+1))
+		ids = append(ids, r.dbCtx.formatMessageIDForDB(msg))
+	}
 	// nolint:gosec
-	query := fmt.Sprintf("DELETE FROM Outbox WHERE id = %s", r.dbCtx.getSQLPlaceholder(1))
-	_, err := r.dbCtx.db.ExecContext(ctx, query, r.dbCtx.formatMessageIDForDB(msg))
+	query := fmt.Sprintf("DELETE FROM Outbox WHERE id IN (%s)", strings.Join(placeholders, ", "))
+	_, err := r.dbCtx.db.ExecContext(ctx, query, ids...)
 	if err != nil {
-		return fmt.Errorf("failed to delete message %s from outbox: %w", msg.ID, err)
+		return fmt.Errorf("failed to delete messages from outbox: %w", err)
 	}
 
 	return nil
