@@ -135,7 +135,7 @@ func TestStopTimesOutIfReaderIsGracefullyStopped(t *testing.T) {
 	r := outbox.NewReader(dbCtx, &fakePublisher{
 		onPublish: func(_ context.Context, _ outbox.Message) error {
 			wg.Done() // trigger for stop
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(readerInterval * 2)
 			return nil
 		},
 	}, outbox.WithInterval(readerInterval))
@@ -143,7 +143,7 @@ func TestStopTimesOutIfReaderIsGracefullyStopped(t *testing.T) {
 
 	wg.Wait()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), readerInterval)
 	defer cancel()
 
 	err := r.Stop(ctx)
