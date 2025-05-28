@@ -35,19 +35,17 @@ func TestWriterSuccessfullyWritesToOutbox(t *testing.T) {
 
 	savedMessage, found := readOutboxMessage(t, anyMsg.ID)
 	require.True(t, found)
+	assertMessageEqual(t, anyMsg, *savedMessage)
 
 	savedEntity, found := readEntity(t, anyEntity.ID)
 	require.True(t, found)
-
 	assertEntityEqual(t, anyEntity, *savedEntity)
-	assertMessageEqual(t, anyMsg, *savedMessage)
 }
 
-func TestWriterRollsBackOnOutboxWriteError(t *testing.T) {
+func TestWriterRollsBackOnOutboxMessageWriteError(t *testing.T) {
 	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
 	w := outbox.NewWriter(dbCtx)
 
-	// Write a message to the outbox
 	anyMsg := createMessageFixture()
 	err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxExecFunc) error {
 		return nil
@@ -69,7 +67,7 @@ func TestWriterRollsBackOnOutboxWriteError(t *testing.T) {
 	require.False(t, found)
 }
 
-func TestWriterRollsBackOnCallbackError(t *testing.T) {
+func TestWriterRollsBackOnUserDefinedCallbackError(t *testing.T) {
 	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
 	w := outbox.NewWriter(dbCtx)
 
