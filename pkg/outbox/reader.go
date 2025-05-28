@@ -129,7 +129,7 @@ func WithErrorChannelSize(size int) ReaderOption {
 //     deleted regardless of batch size to prevent reprocessing
 //   - If fewer messages exist than the batch size, they are still deleted in one operation
 //
-// Default is 1. Size must be positive.
+// Default is 20. Size must be positive.
 func WithDeleteBatchSize(size int) ReaderOption {
 	return func(r *Reader) {
 		if size > 0 {
@@ -153,7 +153,7 @@ func NewReader(dbCtx *DBContext, msgPublisher MessagePublisher, opts ...ReaderOp
 		publishTimeout:  5 * time.Second,
 		deleteTimeout:   5 * time.Second,
 		maxMessages:     100,
-		deleteBatchSize: 1,
+		deleteBatchSize: 20,
 	}
 
 	for _, opt := range opts {

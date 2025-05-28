@@ -117,7 +117,7 @@ reader := outbox.NewReader(
     &messagePublisher{},                // Publisher implementation
     outbox.WithInterval(5*time.Second), // Polling interval (default: 10s)
     outbox.WithReadBatchSize(200),      // Read batch size (default: 100)
-    outbox.WithDeleteBatchSize(50),     // Delete batch size (default: 1)
+    outbox.WithDeleteBatchSize(50),     // Delete batch size (default: 20)
 )
 reader.Start()
 defer reader.Stop(context.Background()) // Stop during application shutdown
