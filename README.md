@@ -82,7 +82,7 @@ Optimistic publishing attempts to publish messages immediately after transaction
 #### Configuration
 
 ```go
-// Create publisher (same as used by reader)
+// Create publisher (see Reader section below)
 publisher := &messagePublisher{}
 
 // Enable optimistic publishing in writer
