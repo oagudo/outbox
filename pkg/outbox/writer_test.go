@@ -55,7 +55,7 @@ func TestWriterSucceed(t *testing.T) {
 	writer := &Writer{sqlExecutor: txProvider, dbCtx: &DBContext{dialect: SQLDialectPostgres}}
 
 	var callbackCalled bool
-	err := writer.Write(context.Background(), Message{}, func(_ context.Context, _ TxExecFunc) error {
+	err := writer.Write(context.Background(), Message{}, func(_ context.Context, _ ExecInTxFunc) error {
 		callbackCalled = true
 		return nil
 	})
@@ -82,7 +82,7 @@ func TestWriterErrorOnTxBegin(t *testing.T) {
 	txProvider := &fakeTxProvider{beginErr: errors.New("failed to begin transaction"), tx: &fakeTx{}}
 	writer := &Writer{sqlExecutor: txProvider, dbCtx: &DBContext{dialect: SQLDialectPostgres}}
 
-	err := writer.Write(context.Background(), Message{}, func(_ context.Context, _ TxExecFunc) error {
+	err := writer.Write(context.Background(), Message{}, func(_ context.Context, _ ExecInTxFunc) error {
 		t.Fatal("should not be called")
 		return nil
 	})
@@ -110,7 +110,7 @@ func TestWriterErrorOnTxCommit(t *testing.T) {
 	writer := &Writer{sqlExecutor: txProvider, dbCtx: &DBContext{dialect: SQLDialectPostgres}}
 
 	var callbackCalled bool
-	err := writer.Write(context.Background(), Message{}, func(_ context.Context, _ TxExecFunc) error {
+	err := writer.Write(context.Background(), Message{}, func(_ context.Context, _ ExecInTxFunc) error {
 		callbackCalled = true
 		return nil
 	})

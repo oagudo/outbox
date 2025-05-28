@@ -20,12 +20,14 @@ type Writer struct {
 	optimisticTimeout time.Duration
 }
 
-// TxExecFunc is a function that executes a SQL query within a transaction.
-type TxExecFunc func(ctx context.Context, query string, args ...any) (sql.Result, error)
+// ExecInTxFunc executes user-defined queries within the same transaction
+// that stores the outbox message.
+type ExecInTxFunc func(ctx context.Context, query string, args ...any) (sql.Result, error)
 
-// WriterTxFunc is a function that executes user-defined queries within the transaction that
-// stores a message in the outbox.
-type WriterTxFunc func(ctx context.Context, txExecFunc TxExecFunc) error
+// TxWorkFunc is user-supplied callback that accepts a function (ExecInTxFunc)
+// that executes user-defined queries within the transaction that stores a message in the outbox.
+// The Writer itself commits or rolls back the transaction once the callback and the outbox insert complete.
+type TxWorkFunc func(ctx context.Context, execInTx ExecInTxFunc) error
 
 // WriterOption is a function that configures a Writer instance.
 type WriterOption func(*Writer)
@@ -72,7 +74,7 @@ func NewWriter(dbCtx *DBContext, opts ...WriterOption) *Writer {
 //
 // If optimistic publishing is enabled, the message will also be published to the external system
 // after the transaction is committed asynchronously.
-func (w *Writer) Write(ctx context.Context, msg Message, writerTxFunc WriterTxFunc) error {
+func (w *Writer) Write(ctx context.Context, msg Message, txWorkFunc TxWorkFunc) error {
 	tx, err := w.sqlExecutor.BeginTx()
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
@@ -85,7 +87,7 @@ func (w *Writer) Write(ctx context.Context, msg Message, writerTxFunc WriterTxFu
 		}
 	}()
 
-	err = writerTxFunc(ctx, tx.ExecContext)
+	err = txWorkFunc(ctx, tx.ExecContext)
 	if err != nil {
 		return fmt.Errorf("failed to execute user-defined query: %w", err)
 	}

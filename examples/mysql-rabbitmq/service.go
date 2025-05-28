@@ -159,8 +159,8 @@ func main() {
 			Payload:   entityJSON,
 			Context:   msgContextJSON,
 		}
-		err = writer.Write(r.Context(), msg, func(ctx context.Context, txExecFunc outbox.TxExecFunc) error {
-			_, err := txExecFunc(r.Context(),
+		err = writer.Write(r.Context(), msg, func(ctx context.Context, execInTx outbox.ExecInTxFunc) error {
+			_, err := execInTx(r.Context(),
 				"INSERT INTO Entity (id, created_at) VALUES (?, ?)",
 				entity.ID[:], entity.CreatedAt,
 			)

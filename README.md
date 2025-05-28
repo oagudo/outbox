@@ -58,8 +58,9 @@ msg := outbox.Message{
 }
 
 // Write message and entity in a single transaction
-err = writer.Write(ctx, msg, func(ctx context.Context, txExecFunc outbox.TxExecFunc) error {
-    _, err := txExecFunc(ctx, // This query executes within a transaction
+err = writer.Write(ctx, msg, func(ctx context.Context, execInTx outbox.ExecInTxFunc) error {
+    // This user-defined query executes within the same transaction that stores the outbox message
+    _, err := execInTx(ctx, 
         "INSERT INTO Entity (id, created_at) VALUES (?, ?)",
         entity.ID.String(), entity.CreatedAt,
     )

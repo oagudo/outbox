@@ -381,7 +381,7 @@ func writeMessage(t *testing.T, msg outbox.Message) {
 
 	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
 	w := outbox.NewWriter(dbCtx)
-	err := w.Write(context.Background(), msg, func(_ context.Context, _ outbox.TxExecFunc) error {
+	err := w.Write(context.Background(), msg, func(_ context.Context, _ outbox.ExecInTxFunc) error {
 		return nil
 	})
 	require.NoError(t, err)
