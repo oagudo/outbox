@@ -62,7 +62,7 @@ err = writer.Write(ctx, msg, func(ctx context.Context, execInTx outbox.ExecInTxF
     // This user-defined query executes within the same transaction that stores the outbox message
     _, err := execInTx(ctx, 
         "INSERT INTO Entity (id, created_at) VALUES (?, ?)",
-        entity.ID.String(), entity.CreatedAt,
+        entity.ID, entity.CreatedAt,
     )
     return err
 })
