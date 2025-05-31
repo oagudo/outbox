@@ -39,7 +39,7 @@ type fakeTxProvider struct {
 	tx       *fakeTx
 }
 
-func (f *fakeTxProvider) BeginTx() (coreSql.Tx, error) {
+func (f *fakeTxProvider) BeginTx(_ context.Context) (coreSql.Tx, error) {
 	if f.beginErr != nil {
 		return nil, f.beginErr
 	}

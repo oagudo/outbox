@@ -12,6 +12,6 @@ type Tx interface {
 }
 
 type Executor interface {
-	BeginTx() (Tx, error)
+	BeginTx(ctx context.Context) (Tx, error)
 	ExecContext(ctx context.Context, query string, args ...any) error
 }

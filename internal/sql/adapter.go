@@ -25,8 +25,8 @@ type DBAdapter struct {
 	DB *sql.DB
 }
 
-func (a *DBAdapter) BeginTx() (Tx, error) {
-	tx, err := a.DB.Begin()
+func (a *DBAdapter) BeginTx(ctx context.Context) (Tx, error) {
+	tx, err := a.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
