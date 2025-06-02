@@ -16,7 +16,7 @@ type MessagePublisher interface {
 	// This function can be invoked multiple times for the same message.
 	// Message consumers must be idempotent and not affected by receiving duplicate messages,
 	// though some brokers also provide deduplication features.
-	Publish(ctx context.Context, msg Message) error
+	Publish(ctx context.Context, msg *Message) error
 }
 
 // OpKind represents the type of operation that failed.
@@ -292,9 +292,9 @@ func (r *Reader) sendError(err ReaderError) {
 	}
 }
 
-func (r *Reader) sendDiscardedMessage(msg Message) {
+func (r *Reader) sendDiscardedMessage(msg *Message) {
 	select {
-	case r.discardedMsgsCh <- msg:
+	case r.discardedMsgsCh <- *msg:
 	default:
 		// Channel buffer full, drop the message to prevent blocking
 	}
@@ -306,7 +306,7 @@ func (r *Reader) publishMessages() {
 		r.sendError(ReaderError{Op: OpRead, Err: err})
 	}
 
-	msgsToDelete := make([]Message, 0, r.deleteBatchSize)
+	msgsToDelete := make([]*Message, 0, r.deleteBatchSize)
 
 	for _, msg := range msgs {
 		if r.handleMessage(msg) {
@@ -314,7 +314,7 @@ func (r *Reader) publishMessages() {
 		}
 
 		if r.flushIfFull(msgsToDelete) {
-			msgsToDelete = make([]Message, 0, r.deleteBatchSize)
+			msgsToDelete = make([]*Message, 0, r.deleteBatchSize)
 		}
 	}
 
@@ -325,7 +325,7 @@ func (r *Reader) publishMessages() {
 	}
 }
 
-func (r *Reader) flushIfFull(batch []Message) bool {
+func (r *Reader) flushIfFull(batch []*Message) bool {
 	if len(batch) < r.deleteBatchSize {
 		return false
 	}
@@ -338,7 +338,7 @@ func (r *Reader) flushIfFull(batch []Message) bool {
 	return false
 }
 
-func (r *Reader) handleMessage(msg Message) bool {
+func (r *Reader) handleMessage(msg *Message) bool {
 	if msg.TimesAttempted >= r.maxAttempts {
 		r.sendDiscardedMessage(msg)
 		return true // mark for deletion
@@ -359,7 +359,7 @@ func (r *Reader) handleMessage(msg Message) bool {
 	return false
 }
 
-func (r *Reader) incrementTimesAttempted(msg Message) error {
+func (r *Reader) incrementTimesAttempted(msg *Message) error {
 	ctx, cancel := context.WithTimeout(r.ctx, r.updateTimeout)
 	defer cancel()
 
@@ -373,14 +373,14 @@ func (r *Reader) incrementTimesAttempted(msg Message) error {
 	return nil
 }
 
-func (r *Reader) publishMessage(msg Message) error {
+func (r *Reader) publishMessage(msg *Message) error {
 	ctx, cancel := context.WithTimeout(r.ctx, r.publishTimeout)
 	defer cancel()
 
 	return r.msgPublisher.Publish(ctx, msg)
 }
 
-func (r *Reader) deleteMessagesInBatch(batch []Message) error {
+func (r *Reader) deleteMessagesInBatch(batch []*Message) error {
 	if len(batch) == 0 {
 		return nil
 	}
@@ -405,7 +405,7 @@ func (r *Reader) deleteMessagesInBatch(batch []Message) error {
 	return nil
 }
 
-func (r *Reader) readOutboxMessages() ([]Message, error) {
+func (r *Reader) readOutboxMessages() ([]*Message, error) {
 	ctx, cancel := context.WithTimeout(r.ctx, r.readTimeout)
 	defer cancel()
 
@@ -419,9 +419,9 @@ func (r *Reader) readOutboxMessages() ([]Message, error) {
 		_ = rows.Close()
 	}()
 
-	var messages []Message
+	var messages []*Message
 	for rows.Next() {
-		var msg Message
+		msg := &Message{}
 		if err := rows.Scan(&msg.ID, &msg.Payload, &msg.CreatedAt, &msg.Context, &msg.TimesAttempted); err != nil {
 			return nil, fmt.Errorf("failed to scan outbox message: %w", err)
 		}

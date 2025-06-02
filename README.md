@@ -49,13 +49,8 @@ entity := Entity{
 }
 
 entityAsJSON, _ := json.Marshal(entity)
-msgCtx := json.RawMessage(`{"trace_id":"abc123","correlation_id":"xyz789"}`)
-msg := outbox.Message{
-    ID:        uuid.New(),
-    CreatedAt: entity.CreatedAt,
-    Payload:   entityAsJSON,
-    Context:   msgCtx, // Any relevant metadata for the message
-}
+msgCtx := json.RawMessage(`{"trace_id":"abc123","correlation_id":"xyz789"}`) // Any relevant metadata for the message
+msg := outbox.NewMessage(entityAsJSON, msgCtx, outbox.WithCreatedAt(entity.CreatedAt))
 
 // Write message and entity in a single transaction
 err = writer.Write(ctx, msg, func(ctx context.Context, execInTx outbox.ExecInTxFunc) error {
@@ -106,7 +101,7 @@ The Reader periodically checks for unsent messages and publishes them to your me
 type messagePublisher struct {
     // Your message broker client (e.g., Kafka, RabbitMQ)
 }
-func (p *messagePublisher) Publish(ctx context.Context, msg outbox.Message) error {
+func (p *messagePublisher) Publish(ctx context.Context, msg *outbox.Message) error {
     // Publish the message to your broker. See examples below for specific implementations
     return nil
 }

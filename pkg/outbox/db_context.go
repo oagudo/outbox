@@ -33,7 +33,7 @@ func NewDBContext(db *sql.DB, dialect SQLDialect) *DBContext {
 }
 
 // formatMessageIDForDB formats the message ID for the based on the SQL dialect.
-func (c *DBContext) formatMessageIDForDB(msg Message) any {
+func (c *DBContext) formatMessageIDForDB(msg *Message) any {
 	switch c.dialect {
 	case SQLDialectMySQL, SQLDialectOracle, SQLDialectSQLServer:
 		bytes, _ := msg.ID.MarshalBinary() // Convert UUID to binary for better storage

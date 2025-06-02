@@ -35,7 +35,7 @@ func TestWriterSuccessfullyWritesToOutbox(t *testing.T) {
 
 	savedMessage, found := readOutboxMessage(t, anyMsg.ID)
 	require.True(t, found)
-	assertMessageEqual(t, anyMsg, *savedMessage)
+	assertMessageEqual(t, anyMsg, savedMessage)
 
 	savedEntity, found := readEntity(t, anyEntity.ID)
 	require.True(t, found)
@@ -85,10 +85,10 @@ func TestWriterRollsBackOnUserDefinedCallbackError(t *testing.T) {
 
 type fakePublisher struct {
 	publishCalled atomic.Bool
-	onPublish     func(context.Context, outbox.Message) error
+	onPublish     func(context.Context, *outbox.Message) error
 }
 
-func (p *fakePublisher) Publish(ctx context.Context, msg outbox.Message) error {
+func (p *fakePublisher) Publish(ctx context.Context, msg *outbox.Message) error {
 	p.publishCalled.Store(true)
 	if ctx.Err() != nil {
 		return ctx.Err()
@@ -119,7 +119,7 @@ func TestWriterWithOptimisticPublisher(t *testing.T) {
 
 	t.Run("does not remove message from outbox if publisher returns an error", func(t *testing.T) {
 		publisher := &fakePublisher{
-			onPublish: func(_ context.Context, _ outbox.Message) error {
+			onPublish: func(_ context.Context, _ *outbox.Message) error {
 				return errors.New("any publisher error")
 			},
 		}
@@ -189,18 +189,16 @@ func readEntity(t *testing.T, id uuid.UUID) (*entity, bool) {
 	return &e, true
 }
 
-func createMessageFixture() outbox.Message {
-	msgID := uuid.New()
-	msgContext := []byte(`{"any_context_key": "any_context_value"}`)
-	msgPayload := []byte(`{"any_payload_key": "any_payload_value"}`)
-	createdAt := time.Now().UTC().Truncate(time.Millisecond)
+func createMessageFixture(opts ...outbox.MessageOption) *outbox.Message {
+	msgOpts := []outbox.MessageOption{outbox.WithCreatedAt(time.Now().UTC().Truncate(time.Millisecond))}
+	msgOpts = append(msgOpts, opts...)
+	msg := outbox.NewMessage(
+		[]byte(`{"any_payload_key": "any_payload_value"}`),
+		[]byte(`{"any_context_key": "any_context_value"}`),
+		msgOpts...,
+	)
 
-	return outbox.Message{
-		ID:        msgID,
-		CreatedAt: createdAt,
-		Context:   msgContext,
-		Payload:   msgPayload,
-	}
+	return msg
 }
 
 func createEntityFixture() entity {
@@ -213,7 +211,7 @@ func createEntityFixture() entity {
 	}
 }
 
-func assertMessageEqual(t *testing.T, expected, actual outbox.Message) {
+func assertMessageEqual(t *testing.T, expected, actual *outbox.Message) {
 	t.Helper()
 
 	require.Equal(t, expected.ID, actual.ID)

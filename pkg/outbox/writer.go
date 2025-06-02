@@ -74,7 +74,7 @@ func NewWriter(dbCtx *DBContext, opts ...WriterOption) *Writer {
 //
 // If optimistic publishing is enabled, the message will also be published to the external system
 // after the transaction is committed asynchronously.
-func (w *Writer) Write(ctx context.Context, msg Message, txWorkFunc TxWorkFunc) error {
+func (w *Writer) Write(ctx context.Context, msg *Message, txWorkFunc TxWorkFunc) error {
 	tx, err := w.sqlExecutor.BeginTx(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
@@ -118,7 +118,7 @@ func (w *Writer) Write(ctx context.Context, msg Message, txWorkFunc TxWorkFunc) 
 	return nil
 }
 
-func (w *Writer) publishMessage(ctx context.Context, msg Message) {
+func (w *Writer) publishMessage(ctx context.Context, msg *Message) {
 	ctx, cancel := context.WithTimeout(ctx, w.optimisticTimeout)
 	defer cancel()
 

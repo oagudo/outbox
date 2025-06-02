@@ -38,7 +38,7 @@ type messagePublisher struct {
 	queue   string
 }
 
-func (p *messagePublisher) Publish(ctx context.Context, msg outbox.Message) error {
+func (p *messagePublisher) Publish(ctx context.Context, msg *outbox.Message) error {
 	msgContext := map[string]string{}
 	if err := json.Unmarshal(msg.Context, &msgContext); err != nil {
 		log.Printf("failed to unmarshal message context: %v", err)
@@ -153,12 +153,7 @@ func main() {
 			http.Error(w, "failed to marshal message context", http.StatusInternalServerError)
 			return
 		}
-		msg := outbox.Message{
-			ID:        uuid.New(),
-			CreatedAt: entity.CreatedAt,
-			Payload:   entityJSON,
-			Context:   msgContextJSON,
-		}
+		msg := outbox.NewMessage(entityJSON, msgContextJSON, outbox.WithCreatedAt(entity.CreatedAt))
 		err = writer.Write(r.Context(), msg, func(ctx context.Context, execInTx outbox.ExecInTxFunc) error {
 			_, err := execInTx(r.Context(),
 				"INSERT INTO Entity (id, created_at) VALUES (?, ?)",

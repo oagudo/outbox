@@ -26,7 +26,7 @@ func TestReaderSuccessfullyPublishesMessage(t *testing.T) {
 	writeMessage(t, anyMsg)
 
 	r := outbox.NewReader(dbCtx, &fakePublisher{
-		onPublish: func(_ context.Context, msg outbox.Message) error {
+		onPublish: func(_ context.Context, msg *outbox.Message) error {
 			assertMessageEqual(t, anyMsg, msg)
 			return nil
 		},
@@ -45,14 +45,10 @@ func TestReaderPublishesMessagesInOrder(t *testing.T) {
 	dbCtx := setupTest(t)
 
 	firstMsg := createMessageFixture()
+	secondMsg := createMessageFixture(outbox.WithCreatedAt(firstMsg.CreatedAt.Add(1 * time.Second)))
+	thirdMsg := createMessageFixture(outbox.WithCreatedAt(firstMsg.CreatedAt.Add(2 * time.Second)))
 
-	secondMsg := createMessageFixture()
-	secondMsg.CreatedAt = firstMsg.CreatedAt.Add(1 * time.Second)
-
-	thirdMsg := createMessageFixture()
-	thirdMsg.CreatedAt = firstMsg.CreatedAt.Add(2 * time.Second)
-
-	msgs := []outbox.Message{
+	msgs := []*outbox.Message{
 		firstMsg,
 		secondMsg,
 		thirdMsg,
@@ -62,7 +58,7 @@ func TestReaderPublishesMessagesInOrder(t *testing.T) {
 
 	var onPublishCalls int32 = 0
 	r := outbox.NewReader(dbCtx, &fakePublisher{
-		onPublish: func(_ context.Context, msg outbox.Message) error {
+		onPublish: func(_ context.Context, msg *outbox.Message) error {
 			currentCalls := atomic.LoadInt32(&onPublishCalls)
 			require.Equal(t, msg.ID, msgs[currentCalls].ID) // they are published in order
 			atomic.AddInt32(&onPublishCalls, 1)
@@ -92,12 +88,12 @@ func TestReaderRetriesFailedPublishAndRetainsMessage(t *testing.T) {
 	secondPublishedMsg := createMessageFixture()
 	secondPublishedMsg.CreatedAt = firstPublishedMsg.CreatedAt.Add(2 * time.Second)
 
-	writeMessages(t, []outbox.Message{firstPublishedMsg, failingMsg, secondPublishedMsg})
+	writeMessages(t, []*outbox.Message{firstPublishedMsg, failingMsg, secondPublishedMsg})
 
 	publishErr := errors.New("any error during publish")
 
 	r := outbox.NewReader(dbCtx, &fakePublisher{
-		onPublish: func(_ context.Context, msg outbox.Message) error {
+		onPublish: func(_ context.Context, msg *outbox.Message) error {
 			if msg.ID == failingMsg.ID {
 				return publishErr
 			}
@@ -114,7 +110,7 @@ func TestReaderRetriesFailedPublishAndRetainsMessage(t *testing.T) {
 
 	msg, found := readOutboxMessage(t, failingMsg.ID)
 	require.True(t, found)
-	assertMessageEqual(t, failingMsg, *msg)
+	assertMessageEqual(t, failingMsg, msg)
 
 	require.NoError(t, r.Stop(context.Background()))
 }
@@ -128,7 +124,7 @@ func TestStopTimesOutIfReaderIsGracefullyStopped(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	r := outbox.NewReader(dbCtx, &fakePublisher{
-		onPublish: func(_ context.Context, _ outbox.Message) error {
+		onPublish: func(_ context.Context, _ *outbox.Message) error {
 			wg.Done() // trigger for stop
 			time.Sleep(readerInterval * 2)
 			return nil
@@ -205,7 +201,7 @@ func TestShouldTimeoutWhenUpdatingMessagesTakesTooLong(t *testing.T) {
 	writeMessage(t, anyMsg)
 
 	r := outbox.NewReader(dbCtx, &fakePublisher{
-		onPublish: func(_ context.Context, _ outbox.Message) error {
+		onPublish: func(_ context.Context, _ *outbox.Message) error {
 			return errors.New("any error during publish")
 		},
 	},
@@ -229,7 +225,7 @@ func TestStopCancelsInProgressPublishing(t *testing.T) {
 
 	var onPublishCalls int32 = 0
 	r := outbox.NewReader(dbCtx, &fakePublisher{
-		onPublish: func(_ context.Context, _ outbox.Message) error {
+		onPublish: func(_ context.Context, _ *outbox.Message) error {
 			atomic.AddInt32(&onPublishCalls, 1)
 			time.Sleep(1 * time.Millisecond)
 			return nil
@@ -283,7 +279,7 @@ func TestReaderDiscardsErrorsIfBufferIsFull(t *testing.T) {
 	wg.Add(1)
 	onPublishCalls := 0
 	r := outbox.NewReader(dbCtx, &fakePublisher{
-		onPublish: func(_ context.Context, _ outbox.Message) error {
+		onPublish: func(_ context.Context, _ *outbox.Message) error {
 			onPublishCalls++
 			if onPublishCalls == 1 {
 				return firstErr
@@ -314,14 +310,12 @@ func TestReaderDropsDiscardedMessagesWhenChannelIsFull(t *testing.T) {
 	dbCtx := setupTest(t)
 
 	firstMessageDiscarded := createMessageFixture()
+	secondMessageDiscarded := createMessageFixture(outbox.WithCreatedAt(firstMessageDiscarded.CreatedAt.Add(1 * time.Second)))
 
-	secondMessageDiscarded := createMessageFixture()
-	secondMessageDiscarded.CreatedAt = firstMessageDiscarded.CreatedAt.Add(1 * time.Second)
-
-	writeMessages(t, []outbox.Message{firstMessageDiscarded, secondMessageDiscarded})
+	writeMessages(t, []*outbox.Message{firstMessageDiscarded, secondMessageDiscarded})
 
 	r := outbox.NewReader(dbCtx, &fakePublisher{
-		onPublish: func(_ context.Context, _ outbox.Message) error {
+		onPublish: func(_ context.Context, _ *outbox.Message) error {
 			return errors.New("any error during publish")
 		},
 	},
@@ -356,7 +350,7 @@ func TestReaderDeletesMessagesInBatches(t *testing.T) {
 	done := make(chan struct{})
 	var onPublishCalls int32 = 0
 	r := outbox.NewReader(dbCtx, &fakePublisher{
-		onPublish: func(_ context.Context, _ outbox.Message) error {
+		onPublish: func(_ context.Context, _ *outbox.Message) error {
 			numberOfCalls := atomic.AddInt32(&onPublishCalls, 1)
 			if int(numberOfCalls) == deleteBatchSize-1 {
 				// wait before the batch size is reached
@@ -395,7 +389,7 @@ func TestReaderDeletesAllPublishedMessagesAfterIterationEvenIfBatchSizeIsNotReac
 
 	var onPublishCalls int32 = 0
 	r := outbox.NewReader(dbCtx, &fakePublisher{
-		onPublish: func(_ context.Context, _ outbox.Message) error {
+		onPublish: func(_ context.Context, _ *outbox.Message) error {
 			atomic.AddInt32(&onPublishCalls, 1)
 			return nil
 		},
@@ -423,7 +417,7 @@ func TestReaderDiscardsMessageAfterMaxAttempts(t *testing.T) {
 
 	var numberOfPublishAttempts int32 = 0
 	reader := outbox.NewReader(dbCtx, &fakePublisher{
-		onPublish: func(_ context.Context, msg outbox.Message) error {
+		onPublish: func(_ context.Context, msg *outbox.Message) error {
 			assert.Equal(t, anyMsg.ID, msg.ID)
 			atomic.AddInt32(&numberOfPublishAttempts, 1)
 			return errors.New("any error during publish")
@@ -452,7 +446,7 @@ func TestReaderDiscardsMessageAfterOptimisticPublishFailure(t *testing.T) {
 
 	anyMsg := createMessageFixture()
 	writer := outbox.NewWriter(dbCtx, outbox.WithOptimisticPublisher(&fakePublisher{
-		onPublish: func(_ context.Context, _ outbox.Message) error {
+		onPublish: func(_ context.Context, _ *outbox.Message) error {
 			return errors.New("any error during optimistic publish")
 		},
 	}))
@@ -467,7 +461,7 @@ func TestReaderDiscardsMessageAfterOptimisticPublishFailure(t *testing.T) {
 	}, testTimeout, pollInterval)
 
 	reader := outbox.NewReader(dbCtx, &fakePublisher{
-		onPublish: func(_ context.Context, _ outbox.Message) error {
+		onPublish: func(_ context.Context, _ *outbox.Message) error {
 			require.Fail(t, "should not be called")
 			return nil
 		},
@@ -505,7 +499,7 @@ func countMessages(t *testing.T) int {
 	return count
 }
 
-func writeMessage(t *testing.T, msg outbox.Message) {
+func writeMessage(t *testing.T, msg *outbox.Message) {
 	t.Helper()
 
 	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
@@ -516,7 +510,7 @@ func writeMessage(t *testing.T, msg outbox.Message) {
 	require.NoError(t, err)
 }
 
-func writeMessages(t *testing.T, msgs []outbox.Message) {
+func writeMessages(t *testing.T, msgs []*outbox.Message) {
 	t.Helper()
 
 	for _, msg := range msgs {
@@ -547,7 +541,7 @@ func waitForReaderError(t *testing.T, r *outbox.Reader, expectedOp outbox.OpKind
 	}, testTimeout, pollInterval)
 }
 
-func waitForReaderDiscardedMessage(t *testing.T, r *outbox.Reader, expectedMsg outbox.Message) {
+func waitForReaderDiscardedMessage(t *testing.T, r *outbox.Reader, expectedMsg *outbox.Message) {
 	t.Helper()
 
 	require.Eventually(t, func() bool {
@@ -556,7 +550,7 @@ func waitForReaderDiscardedMessage(t *testing.T, r *outbox.Reader, expectedMsg o
 			if !ok { // channel closed by Reader
 				return false
 			}
-			assertMessageEqual(t, expectedMsg, msg)
+			assertMessageEqual(t, expectedMsg, &msg)
 
 			return true
 		default:
