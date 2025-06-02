@@ -163,7 +163,8 @@ CREATE TABLE IF NOT EXISTS Outbox (
     id UUID PRIMARY KEY,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     context BYTEA NOT NULL,
-    payload BYTEA NOT NULL
+    payload BYTEA NOT NULL,
+    times_attempted INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_outbox_created_at ON Outbox (created_at);
@@ -178,7 +179,8 @@ CREATE TABLE IF NOT EXISTS Outbox (
     id BINARY(16) PRIMARY KEY,
     created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     context BLOB NOT NULL,
-    payload BLOB NOT NULL
+    payload BLOB NOT NULL,
+    times_attempted INT NOT NULL DEFAULT 0
 );
 
 CREATE INDEX idx_outbox_created_at ON Outbox (created_at);
@@ -193,7 +195,8 @@ CREATE TABLE IF NOT EXISTS Outbox (
     id UUID PRIMARY KEY,
     created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     context BLOB NOT NULL,
-    payload BLOB NOT NULL
+    payload BLOB NOT NULL,
+    times_attempted INT NOT NULL DEFAULT 0
 );
 
 CREATE INDEX idx_outbox_created_at ON Outbox (created_at);
@@ -208,7 +211,8 @@ CREATE TABLE IF NOT EXISTS Outbox (
     id TEXT PRIMARY KEY,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     context BLOB NOT NULL,
-    payload BLOB NOT NULL
+    payload BLOB NOT NULL,
+    times_attempted INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_outbox_created_at ON Outbox (created_at);
@@ -223,7 +227,8 @@ CREATE TABLE Outbox (
     id RAW(16) PRIMARY KEY,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL,
     context BLOB NOT NULL,
-    payload BLOB NOT NULL
+    payload BLOB NOT NULL,
+    times_attempted NUMBER(10) DEFAULT 0 NOT NULL
 );
 
 CREATE INDEX idx_outbox_created_at ON Outbox (created_at);
@@ -238,7 +243,8 @@ CREATE TABLE Outbox (
     id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
     created_at DATETIME2(3) NOT NULL DEFAULT GETUTCDATE(),
     context VARBINARY(MAX) NOT NULL,
-    payload VARBINARY(MAX) NOT NULL
+    payload VARBINARY(MAX) NOT NULL,
+    times_attempted INT NOT NULL DEFAULT 0
 );
 
 CREATE INDEX idx_outbox_created_at ON Outbox (created_at);
