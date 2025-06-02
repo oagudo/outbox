@@ -119,14 +119,14 @@ reader.Start()
 defer reader.Stop(context.Background()) // Stop during application shutdown
 
 
-// 3-A. Monitor standard processing errors (read / publish / delete / update).
+// Monitor standard processing errors (read / publish / delete / update).
 go func() {
     for err := range reader.Errors() {
         log.Printf("outbox %s error: %v", err.Op, err.Err)
     }
 }()
 
-// 3-B. Monitor discarded messages (hit the max-attempts threshold).
+// Monitor discarded messages (hit the max-attempts threshold).
 go func() {
     for msg := range reader.DiscardedMessages() {
         log.Printf("outbox message %s discarded after %d attempts",
