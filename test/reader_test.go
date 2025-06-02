@@ -198,6 +198,27 @@ func TestShouldTimeoutWhenDeletingMessagesTakesTooLong(t *testing.T) {
 	require.NoError(t, r.Stop(context.Background()))
 }
 
+func TestShouldTimeoutWhenUpdatingMessagesTakesTooLong(t *testing.T) {
+	dbCtx := setupTest(t)
+
+	anyMsg := createMessageFixture()
+	writeMessage(t, anyMsg)
+
+	r := outbox.NewReader(dbCtx, &fakePublisher{
+		onPublish: func(_ context.Context, _ outbox.Message) error {
+			return errors.New("any error during publish")
+		},
+	},
+		outbox.WithInterval(readerInterval),
+		outbox.WithUpdateTimeout(0), // context should be cancelled
+	)
+	r.Start()
+
+	waitForReaderError(t, r, outbox.OpUpdate, context.DeadlineExceeded)
+
+	require.NoError(t, r.Stop(context.Background()))
+}
+
 func TestStopCancelsInProgressPublishing(t *testing.T) {
 	dbCtx := setupTest(t)
 
@@ -289,6 +310,41 @@ func TestReaderDiscardsErrorsIfBufferIsFull(t *testing.T) {
 	require.NoError(t, r.Stop(context.Background()))
 }
 
+func TestReaderDropsDiscardedMessagesWhenChannelIsFull(t *testing.T) {
+	dbCtx := setupTest(t)
+
+	firstMessageDiscarded := createMessageFixture()
+
+	secondMessageDiscarded := createMessageFixture()
+	secondMessageDiscarded.CreatedAt = firstMessageDiscarded.CreatedAt.Add(1 * time.Second)
+
+	writeMessages(t, []outbox.Message{firstMessageDiscarded, secondMessageDiscarded})
+
+	r := outbox.NewReader(dbCtx, &fakePublisher{
+		onPublish: func(_ context.Context, _ outbox.Message) error {
+			return errors.New("any error during publish")
+		},
+	},
+		outbox.WithDiscardedMessagesChannelSize(1),
+		outbox.WithMaxAttempts(1),
+		outbox.WithInterval(readerInterval),
+	)
+	r.Start()
+
+	require.Eventually(t, func() bool {
+		return countMessages(t) == 0
+	}, testTimeout, pollInterval)
+
+	waitForReaderDiscardedMessage(t, r, firstMessageDiscarded)
+
+	thirdMessageDiscarded := createMessageFixture()
+	writeMessage(t, thirdMessageDiscarded)
+
+	waitForReaderDiscardedMessage(t, r, thirdMessageDiscarded)
+
+	require.NoError(t, r.Stop(context.Background()))
+}
+
 func TestReaderDeletesMessagesInBatches(t *testing.T) {
 	dbCtx := setupTest(t)
 
@@ -359,6 +415,79 @@ func TestReaderDeletesAllPublishedMessagesAfterIterationEvenIfBatchSizeIsNotReac
 	require.NoError(t, r.Stop(context.Background()))
 }
 
+func TestReaderDiscardsMessageAfterMaxAttempts(t *testing.T) {
+	dbCtx := setupTest(t)
+
+	anyMsg := createMessageFixture()
+	writeMessage(t, anyMsg)
+
+	var numberOfPublishAttempts int32 = 0
+	reader := outbox.NewReader(dbCtx, &fakePublisher{
+		onPublish: func(_ context.Context, msg outbox.Message) error {
+			assert.Equal(t, anyMsg.ID, msg.ID)
+			atomic.AddInt32(&numberOfPublishAttempts, 1)
+			return errors.New("any error during publish")
+		},
+	},
+		outbox.WithInterval(readerInterval),
+		outbox.WithReadBatchSize(1),
+		outbox.WithMaxAttempts(3),
+	)
+	reader.Start()
+
+	waitForReaderDiscardedMessage(t, reader, anyMsg)
+
+	require.Equal(t, 3, int(atomic.LoadInt32(&numberOfPublishAttempts)))
+
+	require.Eventually(t, func() bool {
+		_, found := readOutboxMessage(t, anyMsg.ID)
+		return !found
+	}, testTimeout, pollInterval)
+
+	require.NoError(t, reader.Stop(context.Background()))
+}
+
+func TestReaderDiscardsMessageAfterOptimisticPublishFailure(t *testing.T) {
+	dbCtx := setupTest(t)
+
+	anyMsg := createMessageFixture()
+	writer := outbox.NewWriter(dbCtx, outbox.WithOptimisticPublisher(&fakePublisher{
+		onPublish: func(_ context.Context, _ outbox.Message) error {
+			return errors.New("any error during optimistic publish")
+		},
+	}))
+	err := writer.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.ExecInTxFunc) error {
+		return nil
+	})
+	require.NoError(t, err)
+
+	require.Eventually(t, func() bool {
+		savedMessage, found := readOutboxMessage(t, anyMsg.ID)
+		return found && savedMessage.TimesAttempted == 1
+	}, testTimeout, pollInterval)
+
+	reader := outbox.NewReader(dbCtx, &fakePublisher{
+		onPublish: func(_ context.Context, _ outbox.Message) error {
+			require.Fail(t, "should not be called")
+			return nil
+		},
+	},
+		outbox.WithInterval(readerInterval),
+		outbox.WithReadBatchSize(1),
+		outbox.WithMaxAttempts(1),
+	)
+	reader.Start()
+
+	waitForReaderDiscardedMessage(t, reader, anyMsg)
+
+	require.Eventually(t, func() bool {
+		_, found := readOutboxMessage(t, anyMsg.ID)
+		return !found
+	}, testTimeout, pollInterval)
+
+	require.NoError(t, reader.Stop(context.Background()))
+}
+
 func setupTest(t *testing.T) *outbox.DBContext {
 	t.Helper()
 
@@ -410,6 +539,24 @@ func waitForReaderError(t *testing.T, r *outbox.Reader, expectedOp outbox.OpKind
 
 			assert.ErrorIs(t, err.Err, expectedErr,
 				"expected error to match expected type")
+
+			return true
+		default:
+			return false
+		}
+	}, testTimeout, pollInterval)
+}
+
+func waitForReaderDiscardedMessage(t *testing.T, r *outbox.Reader, expectedMsg outbox.Message) {
+	t.Helper()
+
+	require.Eventually(t, func() bool {
+		select {
+		case msg, ok := <-r.DiscardedMessages():
+			if !ok { // channel closed by Reader
+				return false
+			}
+			assertMessageEqual(t, expectedMsg, msg)
 
 			return true
 		default:

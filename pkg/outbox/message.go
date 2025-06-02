@@ -21,4 +21,8 @@ type Message struct {
 
 	// Payload contains the actual message data, typically JSON serialized
 	Payload []byte
+
+	// TimesAttempted is the number of times the message has been attempted to be published
+	// Read only field
+	TimesAttempted int32
 }

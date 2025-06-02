@@ -134,8 +134,10 @@ func TestWriterWithOptimisticPublisher(t *testing.T) {
 
 		require.Eventually(t, publisher.publishCalled.Load, testTimeout, pollInterval)
 
-		_, found := readOutboxMessage(t, anyMsg.ID)
-		require.True(t, found)
+		require.Eventually(t, func() bool {
+			savedMessage, found := readOutboxMessage(t, anyMsg.ID)
+			return found && savedMessage.TimesAttempted == 1
+		}, testTimeout, pollInterval)
 	})
 
 	t.Run("does not remove message from outbox if optimistic publishing takes too long", func(t *testing.T) {
@@ -163,8 +165,8 @@ func readOutboxMessage(t *testing.T, id uuid.UUID) (*outbox.Message, bool) {
 	t.Helper()
 
 	var msg outbox.Message
-	err := db.QueryRow("SELECT id, created_at, context, payload FROM Outbox WHERE id = $1", id).Scan(
-		&msg.ID, &msg.CreatedAt, &msg.Context, &msg.Payload,
+	err := db.QueryRow("SELECT id, created_at, context, payload, times_attempted FROM Outbox WHERE id = $1", id).Scan(
+		&msg.ID, &msg.CreatedAt, &msg.Context, &msg.Payload, &msg.TimesAttempted,
 	)
 	if err == sql.ErrNoRows {
 		return nil, false

@@ -118,6 +118,7 @@ reader := outbox.NewReader(
     outbox.WithInterval(5*time.Second), // Polling interval (default: 10s)
     outbox.WithReadBatchSize(200),      // Read batch size (default: 100)
     outbox.WithDeleteBatchSize(50),     // Delete batch size (default: 20)
+    outbox.WithMaxAttempts(300)         // Discard after 300 attempts (default: MaxInt32)
 )
 reader.Start()
 defer reader.Stop(context.Background()) // Stop during application shutdown
@@ -145,6 +146,29 @@ go func() {
     }
 }()
 ```
+</details>
+
+<details>
+<summary><strong>🚮 Discarded Messages</strong></summary>
+
+When a message reaches the maximum number of publish attempts (configured via `WithMaxAttempts`), the reader stops retrying **and discards the message**. You can subscribe to these events to push the payload to a dead-letter queue, trigger an alert or collect metrics through the `DiscardedMessages()` channel:
+
+```go
+reader := outbox.NewReader(
+    dbCtx,
+    &messagePublisher{},
+    outbox.WithMaxAttempts(5),   // discard after 5 attempts
+)
+reader.Start()
+
+go func() {
+    for msg := range reader.DiscardedMessages() {
+        log.Printf("Message %s discarded after %d attempts", msg.ID, msg.TimesAttempted)
+        // e.g. forward to a dead-letter topic or alerting system
+    }
+}()
+```
+
 </details>
 
 ### Database Setup

@@ -3,6 +3,7 @@ package outbox
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -23,6 +24,7 @@ type OpKind uint8
 
 const (
 	OpRead    OpKind = iota // reading messages from the outbox
+	OpUpdate                // updating a message in the outbox table
 	OpPublish               // publishing messages to the external system
 	OpDelete                // deleting messages from the outbox
 )
@@ -43,15 +45,18 @@ type Reader struct {
 	readTimeout     time.Duration
 	publishTimeout  time.Duration
 	deleteTimeout   time.Duration
+	updateTimeout   time.Duration
 	maxMessages     int
 	deleteBatchSize int
+	maxAttempts     int32
 
-	started int32
-	closed  int32
-	ctx     context.Context
-	cancel  context.CancelFunc
-	wg      sync.WaitGroup
-	errCh   chan ReaderError
+	started         int32
+	closed          int32
+	ctx             context.Context
+	cancel          context.CancelFunc
+	wg              sync.WaitGroup
+	errCh           chan ReaderError
+	discardedMsgsCh chan Message
 }
 
 // ReaderOption is a function that configures a Reader instance.
@@ -89,6 +94,14 @@ func WithDeleteTimeout(timeout time.Duration) ReaderOption {
 	}
 }
 
+// WithUpdateTimeout sets the timeout for updating a message in the outbox table.
+// Default is 5 seconds.
+func WithUpdateTimeout(timeout time.Duration) ReaderOption {
+	return func(r *Reader) {
+		r.updateTimeout = timeout
+	}
+}
+
 // WithReadBatchSize sets the maximum number of messages to process in a single batch.
 // Default is 100 messages. Must be positive.
 func WithReadBatchSize(batchSize int) ReaderOption {
@@ -105,6 +118,28 @@ func WithErrorChannelSize(size int) ReaderOption {
 	return func(r *Reader) {
 		if size > 0 {
 			r.errCh = make(chan ReaderError, size)
+		}
+	}
+}
+
+// WithMaxAttempts sets the maximum number of attempts to publish a message.
+// Message is discarded if max attempts is reached. Users can use `DiscardedMessages`
+// function to get a channel and be notified about any message discarded.
+// Default is math.MaxInt32. Must be positive.
+func WithMaxAttempts(maxAttempts int32) ReaderOption {
+	return func(r *Reader) {
+		if maxAttempts > 0 {
+			r.maxAttempts = maxAttempts
+		}
+	}
+}
+
+// WithDiscardedMessagesChannelSize sets the size of the discarded messages channel.
+// Default is 128. Size must be positive.
+func WithDiscardedMessagesChannelSize(size int) ReaderOption {
+	return func(r *Reader) {
+		if size > 0 {
+			r.discardedMsgsCh = make(chan Message, size)
 		}
 	}
 }
@@ -152,8 +187,10 @@ func NewReader(dbCtx *DBContext, msgPublisher MessagePublisher, opts ...ReaderOp
 		readTimeout:     5 * time.Second,
 		publishTimeout:  5 * time.Second,
 		deleteTimeout:   5 * time.Second,
+		updateTimeout:   5 * time.Second,
 		maxMessages:     100,
 		deleteBatchSize: 20,
+		maxAttempts:     math.MaxInt32,
 	}
 
 	for _, opt := range opts {
@@ -162,6 +199,10 @@ func NewReader(dbCtx *DBContext, msgPublisher MessagePublisher, opts ...ReaderOp
 
 	if r.errCh == nil {
 		r.errCh = make(chan ReaderError, 128)
+	}
+
+	if r.discardedMsgsCh == nil {
+		r.discardedMsgsCh = make(chan Message, 128)
 	}
 
 	return r
@@ -181,6 +222,7 @@ func (r *Reader) Start() {
 
 		defer r.wg.Done()
 		defer close(r.errCh)
+		defer close(r.discardedMsgsCh)
 		defer ticker.Stop()
 
 		for {
@@ -233,11 +275,28 @@ func (r *Reader) Errors() <-chan ReaderError {
 	return r.errCh
 }
 
+// DiscardedMessages returns a channel that receives messages that were discarded
+// because they reached the maximum number of attempts.
+// The channel is closed when the reader is stopped.
+//
+// Consumers should drain this channel promptly to avoid missing messages.
+func (r *Reader) DiscardedMessages() <-chan Message {
+	return r.discardedMsgsCh
+}
+
 func (r *Reader) sendError(err ReaderError) {
 	select {
 	case r.errCh <- err:
 	default:
 		// Channel buffer full, drop the error to prevent blocking
+	}
+}
+
+func (r *Reader) sendDiscardedMessage(msg Message) {
+	select {
+	case r.discardedMsgsCh <- msg:
+	default:
+		// Channel buffer full, drop the message to prevent blocking
 	}
 }
 
@@ -250,21 +309,11 @@ func (r *Reader) publishMessages() {
 	msgsToDelete := make([]Message, 0, r.deleteBatchSize)
 
 	for _, msg := range msgs {
-		err := r.publishMessage(msg)
-		if err != nil {
-			r.sendError(ReaderError{Op: OpPublish, Err: err})
-			continue
+		if r.handleMessage(msg) {
+			msgsToDelete = append(msgsToDelete, msg)
 		}
 
-		msgsToDelete = append(msgsToDelete, msg)
-		if len(msgsToDelete) < r.deleteBatchSize {
-			continue
-		}
-
-		err = r.deleteMessagesInBatch(msgsToDelete)
-		if err != nil {
-			r.sendError(ReaderError{Op: OpDelete, Err: err})
-		} else {
+		if r.flushIfFull(msgsToDelete) {
 			msgsToDelete = make([]Message, 0, r.deleteBatchSize)
 		}
 	}
@@ -274,6 +323,54 @@ func (r *Reader) publishMessages() {
 	if err != nil {
 		r.sendError(ReaderError{Op: OpDelete, Err: err})
 	}
+}
+
+func (r *Reader) flushIfFull(batch []Message) bool {
+	if len(batch) < r.deleteBatchSize {
+		return false
+	}
+	err := r.deleteMessagesInBatch(batch)
+	if err == nil {
+		return true
+	}
+
+	r.sendError(ReaderError{Op: OpDelete, Err: err})
+	return false
+}
+
+func (r *Reader) handleMessage(msg Message) bool {
+	if msg.TimesAttempted >= r.maxAttempts {
+		r.sendDiscardedMessage(msg)
+		return true // mark for deletion
+	}
+
+	err := r.publishMessage(msg)
+	if err == nil {
+		return true
+	}
+
+	r.sendError(ReaderError{Op: OpPublish, Err: err})
+
+	err = r.incrementTimesAttempted(msg)
+	if err != nil {
+		r.sendError(ReaderError{Op: OpUpdate, Err: err})
+	}
+
+	return false
+}
+
+func (r *Reader) incrementTimesAttempted(msg Message) error {
+	ctx, cancel := context.WithTimeout(r.ctx, r.updateTimeout)
+	defer cancel()
+
+	// nolint:gosec
+	query := fmt.Sprintf("UPDATE Outbox SET times_attempted = times_attempted + 1 WHERE id = %s", r.dbCtx.getSQLPlaceholder(1))
+	_, err := r.dbCtx.db.ExecContext(ctx, query, r.dbCtx.formatMessageIDForDB(msg))
+	if err != nil {
+		return fmt.Errorf("failed to increment times attempted for message %s: %w", msg.ID, err)
+	}
+
+	return nil
 }
 
 func (r *Reader) publishMessage(msg Message) error {
@@ -325,7 +422,7 @@ func (r *Reader) readOutboxMessages() ([]Message, error) {
 	var messages []Message
 	for rows.Next() {
 		var msg Message
-		if err := rows.Scan(&msg.ID, &msg.Payload, &msg.CreatedAt, &msg.Context); err != nil {
+		if err := rows.Scan(&msg.ID, &msg.Payload, &msg.CreatedAt, &msg.Context, &msg.TimesAttempted); err != nil {
 			return nil, fmt.Errorf("failed to scan outbox message: %w", err)
 		}
 		messages = append(messages, msg)
@@ -341,12 +438,12 @@ func (r *Reader) buildSelectMessagesQuery() string {
 
 	switch r.dbCtx.dialect {
 	case SQLDialectOracle:
-		return fmt.Sprintf("SELECT id, payload, created_at, context FROM Outbox ORDER BY created_at ASC FETCH FIRST %s ROWS ONLY", limitPlaceholder)
+		return fmt.Sprintf("SELECT id, payload, created_at, context, times_attempted FROM Outbox ORDER BY created_at ASC FETCH FIRST %s ROWS ONLY", limitPlaceholder)
 
 	case SQLDialectSQLServer:
-		return fmt.Sprintf("SELECT TOP (%s) id, payload, created_at, context FROM Outbox ORDER BY created_at ASC", limitPlaceholder)
+		return fmt.Sprintf("SELECT TOP (%s) id, payload, created_at, context, times_attempted FROM Outbox ORDER BY created_at ASC", limitPlaceholder)
 
 	default:
-		return fmt.Sprintf("SELECT id, payload, created_at, context FROM Outbox ORDER BY created_at ASC LIMIT %s", limitPlaceholder)
+		return fmt.Sprintf("SELECT id, payload, created_at, context, times_attempted FROM Outbox ORDER BY created_at ASC LIMIT %s", limitPlaceholder)
 	}
 }
