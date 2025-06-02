@@ -122,54 +122,28 @@ reader := outbox.NewReader(
 )
 reader.Start()
 defer reader.Stop(context.Background()) // Stop during application shutdown
-```
 
-<details>
-<summary><strong>🚨 Error Handling</strong></summary>
 
-The Reader provides an error channel to monitor failures during message processing:
-
-```go
-reader := outbox.NewReader(dbCtx, &messagePublisher{}, outbox.WithInterval(5*time.Second))
-reader.Start()
-
+// 3-A. Monitor standard processing errors (read / publish / delete / update).
 go func() {
     for err := range reader.Errors() {
-        switch err.Op {
-        case outbox.OpRead:    // Failed to read from outbox table
-            log.Printf("Read error: %v", err.Err)
-        case outbox.OpPublish: // Failed to publish message (will retry)
-            log.Printf("Publish error: %v", err.Err)
-        case outbox.OpDelete:  // Failed to delete message(s)
-            log.Printf("Delete error: %v", err.Err)
-        }
+        log.Printf("outbox %s error: %v", err.Op, err.Err)
     }
 }()
-```
-</details>
 
-<details>
-<summary><strong>🚮 Discarded Messages</strong></summary>
-
-When a message reaches the maximum number of publish attempts (configured via `WithMaxAttempts`), the reader stops retrying **and discards the message**. You can subscribe to these events to push the payload to a dead-letter queue, trigger an alert or collect metrics through the `DiscardedMessages()` channel:
-
-```go
-reader := outbox.NewReader(
-    dbCtx,
-    &messagePublisher{},
-    outbox.WithMaxAttempts(5),   // discard after 5 attempts
-)
-reader.Start()
-
+// 3-B. Monitor discarded messages (hit the max-attempts threshold).
 go func() {
     for msg := range reader.DiscardedMessages() {
-        log.Printf("Message %s discarded after %d attempts", msg.ID, msg.TimesAttempted)
-        // e.g. forward to a dead-letter topic or alerting system
+        log.Printf("outbox message %s discarded after %d attempts",
+            msg.ID, msg.TimesAttempted)
+        // Example next steps:
+        //   • forward to a dead-letter topic
+        //   • raise an alert / metric
+        //   • persist for manual inspection
     }
 }()
-```
 
-</details>
+```
 
 ### Database Setup
 
