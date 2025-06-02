@@ -177,15 +177,31 @@ func TestShouldTimeoutWhenPublishingMessagesTakesTooLong(t *testing.T) {
 	require.NoError(t, r.Stop(context.Background()))
 }
 
-func TestShouldTimeoutWhenDeletingMessagesTakesTooLong(t *testing.T) {
+func TestShouldTimeoutWhenDeletingMessagesAtTheEndOfBatchTakesTooLong(t *testing.T) {
 	dbCtx := setupTest(t)
 
-	anyMsg := createMessageFixture()
-	writeMessage(t, anyMsg)
+	writeMessage(t, createMessageFixture())
 
 	r := outbox.NewReader(dbCtx, &fakePublisher{},
 		outbox.WithInterval(readerInterval),
 		outbox.WithDeleteTimeout(0), // context should be cancelled
+	)
+	r.Start()
+
+	waitForReaderError(t, r, outbox.OpDelete, context.DeadlineExceeded)
+
+	require.NoError(t, r.Stop(context.Background()))
+}
+
+func TestShouldTimeoutWhenDeletingMessagesDuringBatchIterationTakesTooLong(t *testing.T) {
+	dbCtx := setupTest(t)
+
+	writeMessages(t, []*outbox.Message{createMessageFixture(), createMessageFixture()})
+
+	r := outbox.NewReader(dbCtx, &fakePublisher{},
+		outbox.WithInterval(readerInterval),
+		outbox.WithDeleteTimeout(0), // context should be cancelled
+		outbox.WithDeleteBatchSize(1),
 	)
 	r.Start()
 
