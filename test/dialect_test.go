@@ -3,7 +3,9 @@ package test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"testing"
+	"time"
 
 	_ "github.com/denisenkom/go-mssqldb"
 	_ "github.com/go-sql-driver/mysql"
@@ -108,21 +110,38 @@ func TestDialectSucceeds(t *testing.T) {
 				_ = db.Close()
 			}()
 
-			anyMsg := createMessageFixture()
 			dbCtx := outbox.NewDBContext(db, tt.dialect)
 			w := outbox.NewWriter(dbCtx)
-			err = w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.ExecInTxFunc) error {
+
+			successMsg := createMessageFixture()
+			err = w.Write(context.Background(), successMsg, func(_ context.Context, _ outbox.ExecInTxFunc) error {
+				return nil
+			})
+			require.NoError(t, err)
+
+			failingMsg := createMessageFixture(outbox.WithCreatedAt(successMsg.CreatedAt.Add(1 * time.Second)))
+			err = w.Write(context.Background(), failingMsg, func(_ context.Context, _ outbox.ExecInTxFunc) error {
 				return nil
 			})
 			require.NoError(t, err)
 
 			r := outbox.NewReader(dbCtx, &fakePublisher{
 				onPublish: func(_ context.Context, msg *outbox.Message) error {
-					assertMessageEqual(t, anyMsg, msg)
+					if msg.ID == failingMsg.ID {
+						assertMessageEqual(t, failingMsg, msg)
+						return errors.New("failed to publish")
+					}
+					assertMessageEqual(t, successMsg, msg)
 					return nil
 				},
-			}, outbox.WithInterval(readerInterval))
+			},
+				outbox.WithInterval(readerInterval),
+				outbox.WithReadBatchSize(1),
+				outbox.WithMaxAttempts(1),
+			)
 			r.Start()
+
+			waitForReaderDiscardedMessage(t, r, failingMsg)
 
 			require.Eventually(t, func() bool {
 				var count int
