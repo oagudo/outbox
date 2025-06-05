@@ -419,6 +419,11 @@ func (r *Reader) flushIfFull(batch []*Message) bool {
 }
 
 func (r *Reader) handleMessage(msg *Message) bool {
+	// db clock used in the query is ahead of the reader clock, skip the message
+	if msg.ScheduledAt.After(time.Now().UTC()) {
+		return false
+	}
+
 	if msg.TimesAttempted >= r.maxAttempts {
 		r.sendDiscardedMessage(msg)
 		return true // mark for deletion
@@ -444,7 +449,7 @@ func (r *Reader) scheduleNextAttempt(msg *Message) error {
 	defer cancel()
 
 	delay := r.delayFunc(int(msg.TimesAttempted))
-	nextScheduledAt := msg.ScheduledAt.Add(delay)
+	nextScheduledAt := time.Now().UTC().Add(delay)
 
 	// nolint:gosec
 	query := fmt.Sprintf("UPDATE Outbox SET times_attempted = times_attempted + 1, scheduled_at = %s WHERE id = %s",

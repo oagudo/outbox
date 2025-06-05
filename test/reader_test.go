@@ -524,9 +524,9 @@ func TestReaderRetriesWithFixedDelay(t *testing.T) {
 	require.Equal(t, 4, len(scheduledTimes))
 
 	require.True(t, failingMsg.CreatedAt.Equal(scheduledTimes[0]))
-	require.Equal(t, scheduledTimes[1].Sub(scheduledTimes[0]), anyDelay)
-	require.Equal(t, scheduledTimes[2].Sub(scheduledTimes[1]), anyDelay)
-	require.Equal(t, scheduledTimes[3].Sub(scheduledTimes[2]), anyDelay)
+	require.GreaterOrEqual(t, scheduledTimes[1].Sub(scheduledTimes[0]), anyDelay)
+	require.GreaterOrEqual(t, scheduledTimes[2].Sub(scheduledTimes[1]), anyDelay)
+	require.GreaterOrEqual(t, scheduledTimes[3].Sub(scheduledTimes[2]), anyDelay)
 
 	require.NoError(t, r.Stop(context.Background()))
 }
@@ -562,10 +562,10 @@ func TestReaderRetriesWithExponentialDelay(t *testing.T) {
 	require.Equal(t, 5, len(scheduledTimes))
 
 	require.True(t, failingMsg.CreatedAt.Equal(scheduledTimes[0]))
-	require.Equal(t, scheduledTimes[1].Sub(scheduledTimes[0]), anyDelay)
-	require.Equal(t, scheduledTimes[2].Sub(scheduledTimes[1]), anyDelay*2)
-	require.Equal(t, scheduledTimes[3].Sub(scheduledTimes[2]), anyDelay*4)
-	require.Equal(t, scheduledTimes[4].Sub(scheduledTimes[3]), anyDelay*4) // max delay is reached
+	require.GreaterOrEqual(t, scheduledTimes[1].Sub(scheduledTimes[0]), anyDelay)
+	require.GreaterOrEqual(t, scheduledTimes[2].Sub(scheduledTimes[1]), anyDelay*2)
+	require.GreaterOrEqual(t, scheduledTimes[3].Sub(scheduledTimes[2]), anyDelay*4)
+	require.GreaterOrEqual(t, scheduledTimes[4].Sub(scheduledTimes[3]), anyDelay*4) // max delay is reached
 
 	require.NoError(t, r.Stop(context.Background()))
 }
