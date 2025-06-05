@@ -581,7 +581,7 @@ func TestReaderRetriesWithExponentialDelay(t *testing.T) {
 func TestReaderDoesNotPickMessagesFromScheduledInTheFuture(t *testing.T) {
 	dbCtx := setupTest(t)
 
-	futureMsg := createMessageFixture(outbox.WithScheduledAt(time.Now().Add(1 * time.Hour)))
+	futureMsg := createMessageFixture(outbox.WithScheduledAt(time.Now().UTC().Add(1 * time.Hour)))
 
 	writeMessages(t, []*outbox.Message{
 		createMessageFixture(),

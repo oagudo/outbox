@@ -444,12 +444,12 @@ func (r *Reader) scheduleNextAttempt(msg *Message) error {
 	defer cancel()
 
 	delay := r.delayFunc(int(msg.TimesAttempted))
-	scheduledAt := msg.ScheduledAt.Add(delay)
+	nextScheduledAt := msg.ScheduledAt.Add(delay)
 
 	// nolint:gosec
 	query := fmt.Sprintf("UPDATE Outbox SET times_attempted = times_attempted + 1, scheduled_at = %s WHERE id = %s",
 		r.dbCtx.getSQLPlaceholder(1), r.dbCtx.getSQLPlaceholder(2))
-	_, err := r.dbCtx.db.ExecContext(ctx, query, scheduledAt, r.dbCtx.formatMessageIDForDB(msg))
+	_, err := r.dbCtx.db.ExecContext(ctx, query, nextScheduledAt, r.dbCtx.formatMessageIDForDB(msg))
 	if err != nil {
 		return fmt.Errorf("failed to schedule next attempt for message %s: %w", msg.ID, err)
 	}
