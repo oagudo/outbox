@@ -14,7 +14,7 @@ Lightweight library for the [transactional outbox pattern](https://microservices
 
 ## Key Features
 
-- **Minimal External Dependencies:** Doesn't impose additional dependencies (like specific Kafka, MySQL, etc. libraries) other than [google/uuid](https://github.com/google/uuid) on users of this library.
+- **Minimal External Dependencies:** Doesn't impose additional dependencies (like specific Kafka, MySQL, etc.) other than [google/uuid](https://github.com/google/uuid) on users of this library.
 - **Database Agnostic:** Designed to work with PostgreSQL, MySQL, CockroachDB, and other relational databases.
 - **Message Broker Agnostic:** Integrates seamlessly with popular brokers like Kafka, NATS, RabbitMQ, and others.
 - **Optimistic Publishing:** Optional immediate async message publishing after transaction commit for reduced latency, with guaranteed delivery fallback.
