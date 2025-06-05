@@ -20,7 +20,7 @@ Lightweight library for the [transactional outbox pattern](https://microservices
 - **Optimistic Publishing:** Optional immediate async message publishing after transaction commit for reduced latency, with guaranteed delivery fallback.
 - **Configurable Retry & Backoff Policies:** Fixed or exponential back-off with adjustable initial and maximum delay.
 - **Max Attempts Safeguard:** Automatically discards messages that exceed a configurable `maxAttempts` threshold, enabling dead-letter routing or alert on poison events.
-- **Observability:** Non-blocking, buffered channels expose processing errors and discarded messages for easy metrics/alerting integration.
+- **Observability:** Exposes channels for processing errors and discarded messages, making it easy to integrate with your metrics and alerting systems.
 - **Simplicity:** Minimal, easy-to-understand codebase focused on core outbox pattern concepts.
 - **Extensible:** Designed for easy customization and integration into your own projects.
 
