@@ -4,18 +4,18 @@
 
 
 [![Release](https://img.shields.io/github/release/oagudo/outbox.svg?style=flat-square)](https://github.com/oagudo/outbox/releases/latest)
-[![Software License](https://img.shields.io/badge/license-MIT-brightgreen.svg?style=flat-square)](LICENSE.md)
+[![Software License](https://img.shields.io/badge/license-MIT-brightgreen.svg?style=flat-square)](LICENSE)
 ![GitHub Actions](https://github.com/oagudo/outbox/actions/workflows/ci.yml/badge.svg)
 [![codecov](https://codecov.io/gh/oagudo/outbox/graph/badge.svg?token=KH1GUAV4VR)](https://codecov.io/gh/oagudo/outbox)
 [![Go Report Card](https://goreportcard.com/badge/github.com/oagudo/outbox?style=flat-square)](https://goreportcard.com/report/github.com/oagudo/outbox)
-[![Go Reference](https://pkg.go.dev/badge/github.com/oagudo/outbox/v4.svg)](https://pkg.go.dev/github.com/oagudo/outbox)
+[![Go Reference](https://pkg.go.dev/badge/github.com/oagudo/outbox)](https://pkg.go.dev/github.com/oagudo/outbox)
 
 Lightweight library for the [transactional outbox pattern](https://microservices.io/patterns/data/transactional-outbox.html) in Go, not tied to any specific relational database or broker.
 
 ## Key Features
 
 - **Minimal External Dependencies:** Doesn't impose additional dependencies (like specific Kafka, MySQL, etc.) other than [google/uuid](https://github.com/google/uuid) on users of this library.
-- **Database Agnostic:** Designed to work with PostgreSQL, MySQL, CockroachDB, and other relational databases.
+- **Database Agnostic:** Designed to work with PostgreSQL, MySQL, Oracle and other relational databases.
 - **Message Broker Agnostic:** Integrates seamlessly with popular brokers like Kafka, NATS, RabbitMQ, and others.
 - **Optimistic Publishing:** Optional immediate async message publishing after transaction commit for reduced latency, with guaranteed delivery fallback.
 - **Configurable Retry & Backoff Policies:** Fixed or exponential back-off with adjustable initial and maximum delay.
