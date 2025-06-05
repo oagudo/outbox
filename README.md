@@ -291,3 +291,7 @@ go run service.go
 # In another terminal trigger a POST to trigger entity creation
 curl -X POST http://localhost:8080/entity
 ```
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
