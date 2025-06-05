@@ -62,7 +62,7 @@ err = writer.Write(ctx, msg, func(ctx context.Context, execInTx outbox.ExecInTxF
     // This user-defined query executes within the 
     // same transaction that stores the outbox message
     _, err := execInTx(ctx, 
-        "INSERT INTO Entity (id, created_at) VALUES (?, ?)",
+        "INSERT INTO entity (id, created_at) VALUES (?, ?)",
         entity.ID, entity.CreatedAt,
     )
     return err
@@ -169,7 +169,7 @@ The outbox table stores messages that need to be published to your message broke
 <summary><strong>🐘 PostgreSQL</strong></summary>
 
 ```sql
-CREATE TABLE IF NOT EXISTS Outbox (
+CREATE TABLE IF NOT EXISTS outbox (
     id UUID PRIMARY KEY,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
     scheduled_at TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -178,8 +178,8 @@ CREATE TABLE IF NOT EXISTS Outbox (
     times_attempted INTEGER NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_outbox_created_at ON Outbox (created_at);
-CREATE INDEX IF NOT EXISTS idx_outbox_scheduled_at ON Outbox (scheduled_at);
+CREATE INDEX IF NOT EXISTS idx_outbox_created_at ON outbox (created_at);
+CREATE INDEX IF NOT EXISTS idx_outbox_scheduled_at ON outbox (scheduled_at);
 ```
 </details>
 
@@ -187,7 +187,7 @@ CREATE INDEX IF NOT EXISTS idx_outbox_scheduled_at ON Outbox (scheduled_at);
 <summary><strong>📊 MySQL</strong></summary>
 
 ```sql
-CREATE TABLE IF NOT EXISTS Outbox (
+CREATE TABLE IF NOT EXISTS outbox (
     id BINARY(16) PRIMARY KEY,
     created_at TIMESTAMP(3) NOT NULL,
     scheduled_at TIMESTAMP(3) NOT NULL,
@@ -196,8 +196,8 @@ CREATE TABLE IF NOT EXISTS Outbox (
     times_attempted INT NOT NULL
 );
 
-CREATE INDEX idx_outbox_created_at ON Outbox (created_at);
-CREATE INDEX idx_outbox_scheduled_at ON Outbox (scheduled_at);
+CREATE INDEX idx_outbox_created_at ON outbox (created_at);
+CREATE INDEX idx_outbox_scheduled_at ON outbox (scheduled_at);
 ```
 </details>
 
@@ -205,7 +205,7 @@ CREATE INDEX idx_outbox_scheduled_at ON Outbox (scheduled_at);
 <summary><strong>🐬 MariaDB</strong></summary>
 
 ```sql
-CREATE TABLE IF NOT EXISTS Outbox (
+CREATE TABLE IF NOT EXISTS outbox (
     id UUID PRIMARY KEY,
     created_at TIMESTAMP(3) NOT NULL,
     scheduled_at TIMESTAMP(3) NOT NULL,
@@ -214,8 +214,8 @@ CREATE TABLE IF NOT EXISTS Outbox (
     times_attempted INT NOT NULL
 );
 
-CREATE INDEX idx_outbox_created_at ON Outbox (created_at);
-CREATE INDEX idx_outbox_scheduled_at ON Outbox (scheduled_at);
+CREATE INDEX idx_outbox_created_at ON outbox (created_at);
+CREATE INDEX idx_outbox_scheduled_at ON outbox (scheduled_at);
 ```
 </details>
 
@@ -223,7 +223,7 @@ CREATE INDEX idx_outbox_scheduled_at ON Outbox (scheduled_at);
 <summary><strong>🗃️ SQLite</strong></summary>
 
 ```sql
-CREATE TABLE IF NOT EXISTS Outbox (
+CREATE TABLE IF NOT EXISTS outbox (
     id TEXT PRIMARY KEY,
     created_at DATETIME NOT NULL,
     scheduled_at DATETIME NOT NULL,
@@ -232,8 +232,8 @@ CREATE TABLE IF NOT EXISTS Outbox (
     times_attempted INTEGER NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_outbox_created_at ON Outbox (created_at);
-CREATE INDEX IF NOT EXISTS idx_outbox_scheduled_at ON Outbox (scheduled_at);
+CREATE INDEX IF NOT EXISTS idx_outbox_created_at ON outbox (created_at);
+CREATE INDEX IF NOT EXISTS idx_outbox_scheduled_at ON outbox (scheduled_at);
 ```
 </details>
 
@@ -241,7 +241,7 @@ CREATE INDEX IF NOT EXISTS idx_outbox_scheduled_at ON Outbox (scheduled_at);
 <summary><strong>🏛️ Oracle</strong></summary>
 
 ```sql
-CREATE TABLE Outbox (
+CREATE TABLE outbox (
     id RAW(16) PRIMARY KEY,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
     scheduled_at TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -250,8 +250,8 @@ CREATE TABLE Outbox (
     times_attempted NUMBER(10) NOT NULL
 );
 
-CREATE INDEX idx_outbox_created_at ON Outbox (created_at);
-CREATE INDEX idx_outbox_scheduled_at ON Outbox (scheduled_at);
+CREATE INDEX idx_outbox_created_at ON outbox (created_at);
+CREATE INDEX idx_outbox_scheduled_at ON outbox (scheduled_at);
 ```
 </details>
 
@@ -259,7 +259,7 @@ CREATE INDEX idx_outbox_scheduled_at ON Outbox (scheduled_at);
 <summary><strong>🪟 SQL Server</strong></summary>
 
 ```sql
-CREATE TABLE Outbox (
+CREATE TABLE outbox (
     id UNIQUEIDENTIFIER PRIMARY KEY,
     created_at DATETIMEOFFSET(3) NOT NULL,
     scheduled_at DATETIMEOFFSET(3) NOT NULL,
@@ -268,8 +268,8 @@ CREATE TABLE Outbox (
     times_attempted INT NOT NULL
 );
 
-CREATE INDEX idx_outbox_created_at ON Outbox (created_at);
-CREATE INDEX idx_outbox_scheduled_at ON Outbox (scheduled_at);
+CREATE INDEX idx_outbox_created_at ON outbox (created_at);
+CREATE INDEX idx_outbox_scheduled_at ON outbox (scheduled_at);
 ```
 </details>
 

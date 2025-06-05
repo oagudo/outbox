@@ -452,7 +452,7 @@ func (r *Reader) scheduleNextAttempt(msg *Message) error {
 	nextScheduledAt := time.Now().UTC().Add(delay)
 
 	// nolint:gosec
-	query := fmt.Sprintf("UPDATE Outbox SET times_attempted = times_attempted + 1, scheduled_at = %s WHERE id = %s",
+	query := fmt.Sprintf("UPDATE outbox SET times_attempted = times_attempted + 1, scheduled_at = %s WHERE id = %s",
 		r.dbCtx.getSQLPlaceholder(1), r.dbCtx.getSQLPlaceholder(2))
 	_, err := r.dbCtx.db.ExecContext(ctx, query, nextScheduledAt, r.dbCtx.formatMessageIDForDB(msg))
 	if err != nil {
@@ -485,7 +485,7 @@ func (r *Reader) deleteMessagesInBatch(batch []*Message) error {
 		ids = append(ids, r.dbCtx.formatMessageIDForDB(msg))
 	}
 	// nolint:gosec
-	query := fmt.Sprintf("DELETE FROM Outbox WHERE id IN (%s)", strings.Join(placeholders, ", "))
+	query := fmt.Sprintf("DELETE FROM outbox WHERE id IN (%s)", strings.Join(placeholders, ", "))
 	_, err := r.dbCtx.db.ExecContext(ctx, query, ids...)
 	if err != nil {
 		return fmt.Errorf("failed to delete messages from outbox: %w", err)
@@ -528,19 +528,19 @@ func (r *Reader) buildSelectMessagesQuery() string {
 	switch r.dbCtx.dialect {
 	case SQLDialectOracle:
 		return fmt.Sprintf(`SELECT id, payload, created_at, scheduled_at, metadata, times_attempted 
-			FROM Outbox 
+			FROM outbox 
 			WHERE scheduled_at <= %s 
 			ORDER BY created_at ASC FETCH FIRST %s ROWS ONLY`, r.dbCtx.getCurrentTimestampInUTC(), limitPlaceholder)
 
 	case SQLDialectSQLServer:
 		return fmt.Sprintf(`SELECT TOP (%s) id, payload, created_at, scheduled_at, metadata, times_attempted 
-			FROM Outbox 
+			FROM outbox 
 			WHERE scheduled_at <= %s 
 			ORDER BY created_at ASC`, limitPlaceholder, r.dbCtx.getCurrentTimestampInUTC())
 
 	default:
 		return fmt.Sprintf(`SELECT id, payload, created_at, scheduled_at, metadata, times_attempted 
-			FROM Outbox 
+			FROM outbox 
 			WHERE scheduled_at <= %s
 			ORDER BY created_at ASC LIMIT %s`, r.dbCtx.getCurrentTimestampInUTC(), limitPlaceholder)
 	}

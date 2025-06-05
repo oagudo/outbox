@@ -39,11 +39,11 @@ func TestMain(m *testing.M) {
 }
 
 func truncateOutboxTable() error {
-	_, err := db.Exec("TRUNCATE TABLE Outbox")
+	_, err := db.Exec("TRUNCATE TABLE outbox")
 	return err
 }
 
 func truncateEntityTable() error {
-	_, err := db.Exec("TRUNCATE TABLE Entity")
+	_, err := db.Exec("TRUNCATE TABLE entity")
 	return err
 }

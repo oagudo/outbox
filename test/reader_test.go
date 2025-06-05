@@ -609,7 +609,7 @@ func countMessages(t *testing.T) int {
 	t.Helper()
 
 	var count int
-	err := db.QueryRow("SELECT COUNT(*) FROM Outbox").Scan(&count)
+	err := db.QueryRow("SELECT COUNT(*) FROM outbox").Scan(&count)
 	require.NoError(t, err)
 	return count
 }

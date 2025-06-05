@@ -121,8 +121,8 @@ func main() {
 		}
 		msg := outbox.NewMessage(entityAsJSON, outbox.WithCreatedAt(entity.CreatedAt), outbox.WithMetadata(msgMetadataAsJSON))
 		err = writer.Write(r.Context(), msg, func(ctx context.Context, execInTx outbox.ExecInTxFunc) error {
-			_, err := execInTx(r.Context(),
-				"INSERT INTO Entity (id, created_at) VALUES ($1, $2)",
+			_, err := execInTx(ctx,
+				"INSERT INTO entity (id, created_at) VALUES ($1, $2)",
 				entity.ID, entity.CreatedAt,
 			)
 			if err != nil {

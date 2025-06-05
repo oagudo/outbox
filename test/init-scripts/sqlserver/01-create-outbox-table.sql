@@ -9,8 +9,8 @@ GO
 USE outbox;
 GO
 
--- Create the Outbox table
-CREATE TABLE Outbox (
+-- Create the outbox table
+CREATE TABLE outbox (
     id UNIQUEIDENTIFIER PRIMARY KEY,
     created_at DATETIMEOFFSET(3) NOT NULL,
     scheduled_at DATETIMEOFFSET(3) NOT NULL,
@@ -19,5 +19,5 @@ CREATE TABLE Outbox (
     times_attempted INT NOT NULL
 );
 
-CREATE INDEX idx_outbox_created_at ON Outbox (created_at);
-CREATE INDEX idx_outbox_scheduled_at ON Outbox (scheduled_at);
+CREATE INDEX idx_outbox_created_at ON outbox (created_at);
+CREATE INDEX idx_outbox_scheduled_at ON outbox (scheduled_at);

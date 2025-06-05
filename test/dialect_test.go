@@ -29,7 +29,7 @@ func TestDialectSucceeds(t *testing.T) {
 					return nil, err
 				}
 
-				_, err = db.Exec("TRUNCATE TABLE Outbox")
+				_, err = db.Exec("TRUNCATE TABLE outbox")
 				return db, err
 			},
 			dialect: outbox.SQLDialectMySQL,
@@ -41,7 +41,7 @@ func TestDialectSucceeds(t *testing.T) {
 					return nil, err
 				}
 
-				_, err = db.Exec("TRUNCATE TABLE Outbox")
+				_, err = db.Exec("TRUNCATE TABLE outbox")
 				return db, err
 			},
 			dialect: outbox.SQLDialectOracle,
@@ -53,7 +53,7 @@ func TestDialectSucceeds(t *testing.T) {
 					return nil, err
 				}
 
-				_, err = db.Exec("TRUNCATE TABLE Outbox")
+				_, err = db.Exec("TRUNCATE TABLE outbox")
 				return db, err
 			},
 			dialect: outbox.SQLDialectSQLServer,
@@ -67,7 +67,7 @@ func TestDialectSucceeds(t *testing.T) {
 
 				// Create tables since SQLite runs in-process
 				_, err = db.Exec(`
-					CREATE TABLE IF NOT EXISTS Outbox (
+					CREATE TABLE IF NOT EXISTS outbox (
 						id TEXT PRIMARY KEY,
 						created_at DATETIME NOT NULL,
 						scheduled_at DATETIME NOT NULL,
@@ -75,14 +75,14 @@ func TestDialectSucceeds(t *testing.T) {
 						payload BLOB NOT NULL,
 						times_attempted INTEGER NOT NULL
 					);
-					CREATE INDEX IF NOT EXISTS idx_outbox_created_at ON Outbox (created_at);
-					CREATE INDEX IF NOT EXISTS idx_outbox_scheduled_at ON Outbox (scheduled_at);
+					CREATE INDEX IF NOT EXISTS idx_outbox_created_at ON outbox (created_at);
+					CREATE INDEX IF NOT EXISTS idx_outbox_scheduled_at ON outbox (scheduled_at);
 				`)
 				if err != nil {
 					return nil, err
 				}
 
-				_, err = db.Exec("DELETE FROM Outbox")
+				_, err = db.Exec("DELETE FROM outbox")
 				if err != nil {
 					return nil, err
 				}
@@ -98,7 +98,7 @@ func TestDialectSucceeds(t *testing.T) {
 					return nil, err
 				}
 
-				_, err = db.Exec("TRUNCATE TABLE Outbox")
+				_, err = db.Exec("TRUNCATE TABLE outbox")
 				return db, err
 			},
 			dialect: outbox.SQLDialectMariaDB,
@@ -148,7 +148,7 @@ func TestDialectSucceeds(t *testing.T) {
 
 			require.Eventually(t, func() bool {
 				var count int
-				err := db.QueryRow("SELECT COUNT(*) FROM Outbox").Scan(&count)
+				err := db.QueryRow("SELECT COUNT(*) FROM outbox").Scan(&count)
 				return err == nil && count == 0
 			}, testTimeout, pollInterval)
 

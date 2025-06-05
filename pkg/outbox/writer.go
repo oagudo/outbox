@@ -92,7 +92,7 @@ func (w *Writer) Write(ctx context.Context, msg *Message, txWorkFunc TxWorkFunc)
 		return fmt.Errorf("failed to execute user-defined query: %w", err)
 	}
 
-	query := fmt.Sprintf("INSERT INTO Outbox (id, created_at, scheduled_at, metadata, payload, times_attempted) VALUES (%s, %s, %s, %s, %s, %s)",
+	query := fmt.Sprintf("INSERT INTO outbox (id, created_at, scheduled_at, metadata, payload, times_attempted) VALUES (%s, %s, %s, %s, %s, %s)",
 		w.dbCtx.getSQLPlaceholder(1),
 		w.dbCtx.getSQLPlaceholder(2),
 		w.dbCtx.getSQLPlaceholder(3),
@@ -125,7 +125,7 @@ func (w *Writer) publishMessage(ctx context.Context, msg *Message) {
 
 	err := w.msgPublisher.Publish(ctx, msg)
 	if err == nil {
-		query := fmt.Sprintf("DELETE FROM Outbox WHERE id = %s", w.dbCtx.getSQLPlaceholder(1))
+		query := fmt.Sprintf("DELETE FROM outbox WHERE id = %s", w.dbCtx.getSQLPlaceholder(1))
 		_ = w.sqlExecutor.ExecContext(ctx, query, w.dbCtx.formatMessageIDForDB(msg))
 	}
 }

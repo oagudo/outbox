@@ -27,7 +27,7 @@ func TestWriterSuccessfullyWritesToOutbox(t *testing.T) {
 	anyEntity := createEntityFixture()
 
 	err := w.Write(context.Background(), anyMsg, func(ctx context.Context, execInTx outbox.ExecInTxFunc) error {
-		_, err := execInTx(ctx, "INSERT INTO Entity (id, created_at) VALUES ($1, $2)", anyEntity.ID, anyEntity.CreatedAt)
+		_, err := execInTx(ctx, "INSERT INTO entity (id, created_at) VALUES ($1, $2)", anyEntity.ID, anyEntity.CreatedAt)
 		require.NoError(t, err)
 		return nil
 	})
@@ -54,7 +54,7 @@ func TestWriterRollsBackOnOutboxMessageWriteError(t *testing.T) {
 
 	anyEntity := createEntityFixture()
 	err = w.Write(context.Background(), anyMsg, func(ctx context.Context, execInTx outbox.ExecInTxFunc) error {
-		_, err := execInTx(ctx, "INSERT INTO Entity (id, created_at) VALUES ($1, $2)", anyEntity.ID, anyEntity.CreatedAt)
+		_, err := execInTx(ctx, "INSERT INTO entity (id, created_at) VALUES ($1, $2)", anyEntity.ID, anyEntity.CreatedAt)
 		require.NoError(t, err)
 		return nil
 	})
@@ -165,7 +165,7 @@ func readOutboxMessage(t *testing.T, id uuid.UUID) (*outbox.Message, bool) {
 	t.Helper()
 
 	var msg outbox.Message
-	err := db.QueryRow("SELECT id, created_at, scheduled_at, metadata, payload, times_attempted FROM Outbox WHERE id = $1", id).Scan(
+	err := db.QueryRow("SELECT id, created_at, scheduled_at, metadata, payload, times_attempted FROM outbox WHERE id = $1", id).Scan(
 		&msg.ID, &msg.CreatedAt, &msg.ScheduledAt, &msg.Metadata, &msg.Payload, &msg.TimesAttempted,
 	)
 	if err == sql.ErrNoRows {
@@ -179,7 +179,7 @@ func readEntity(t *testing.T, id uuid.UUID) (*entity, bool) {
 	t.Helper()
 
 	var e entity
-	err := db.QueryRow("SELECT id, created_at FROM Entity WHERE id = $1", id).Scan(
+	err := db.QueryRow("SELECT id, created_at FROM entity WHERE id = $1", id).Scan(
 		&e.ID, &e.CreatedAt,
 	)
 	if err == sql.ErrNoRows {
