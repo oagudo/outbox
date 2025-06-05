@@ -52,14 +52,15 @@ entity := Entity{
 }
 
 payload, _ := json.Marshal(entity)
-metadata := json.RawMessage(`{"trace_id":"abc123","correlation_id":"xyz789"}`) // Any relevant metadata for the message
+metadata := json.RawMessage(`{"trace_id":"abc123","correlation_id":"xyz789"}`)
 msg := outbox.NewMessage(payload,
     outbox.WithCreatedAt(entity.CreatedAt),
     outbox.WithMetadata(metadata))
 
 // Write message and entity in a single transaction
 err = writer.Write(ctx, msg, func(ctx context.Context, execInTx outbox.ExecInTxFunc) error {
-    // This user-defined query executes within the same transaction that stores the outbox message
+    // This user-defined query executes within the 
+    // same transaction that stores the outbox message
     _, err := execInTx(ctx, 
         "INSERT INTO Entity (id, created_at) VALUES (?, ?)",
         entity.ID, entity.CreatedAt,
