@@ -135,8 +135,8 @@ func TestWriterWithOptimisticPublisher(t *testing.T) {
 		require.Eventually(t, publisher.publishCalled.Load, testTimeout, pollInterval)
 
 		require.Eventually(t, func() bool {
-			savedMessage, found := readOutboxMessage(t, anyMsg.ID)
-			return found && savedMessage.TimesAttempted == 1
+			_, found := readOutboxMessage(t, anyMsg.ID)
+			return found
 		}, testTimeout, pollInterval)
 	})
 

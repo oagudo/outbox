@@ -463,28 +463,20 @@ func TestReaderDiscardsMessageAfterMaxAttempts(t *testing.T) {
 func TestReaderDiscardsMessageAfterOptimisticPublishFailure(t *testing.T) {
 	dbCtx := setupTest(t)
 
-	anyMsg := createMessageFixture()
-	writer := outbox.NewWriter(dbCtx, outbox.WithOptimisticPublisher(&fakePublisher{
+	failingPublisher := &fakePublisher{
 		onPublish: func(_ context.Context, _ *outbox.Message) error {
-			return errors.New("any error during optimistic publish")
+			return errors.New("any error during publish")
 		},
-	}))
+	}
+
+	anyMsg := createMessageFixture()
+	writer := outbox.NewWriter(dbCtx, outbox.WithOptimisticPublisher(failingPublisher))
 	err := writer.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.ExecInTxFunc) error {
 		return nil
 	})
 	require.NoError(t, err)
 
-	require.Eventually(t, func() bool {
-		savedMessage, found := readOutboxMessage(t, anyMsg.ID)
-		return found && savedMessage.TimesAttempted == 1
-	}, testTimeout, pollInterval)
-
-	reader := outbox.NewReader(dbCtx, &fakePublisher{
-		onPublish: func(_ context.Context, _ *outbox.Message) error {
-			require.Fail(t, "should not be called")
-			return nil
-		},
-	},
+	reader := outbox.NewReader(dbCtx, failingPublisher,
 		outbox.WithInterval(readerInterval),
 		outbox.WithReadBatchSize(1),
 		outbox.WithMaxAttempts(1),

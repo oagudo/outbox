@@ -127,8 +127,5 @@ func (w *Writer) publishMessage(ctx context.Context, msg *Message) {
 	if err == nil {
 		query := fmt.Sprintf("DELETE FROM Outbox WHERE id = %s", w.dbCtx.getSQLPlaceholder(1))
 		_ = w.sqlExecutor.ExecContext(ctx, query, w.dbCtx.formatMessageIDForDB(msg))
-	} else {
-		query := fmt.Sprintf("UPDATE Outbox SET times_attempted = times_attempted + 1 WHERE id = %s", w.dbCtx.getSQLPlaceholder(1))
-		_ = w.sqlExecutor.ExecContext(ctx, query, w.dbCtx.formatMessageIDForDB(msg))
 	}
 }
