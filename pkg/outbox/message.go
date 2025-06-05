@@ -38,7 +38,7 @@ type Message struct {
 
 // WithID sets the unique identifier of the message.
 // If not provided, a new UUID will be generated.
-func WithID(id uuid.UUID) func(*Message) {
+func WithID(id uuid.UUID) MessageOption {
 	return func(m *Message) {
 		m.ID = id
 	}
@@ -46,7 +46,7 @@ func WithID(id uuid.UUID) func(*Message) {
 
 // WithCreatedAt sets the time the message was created.
 // If not provided, the current time will be used.
-func WithCreatedAt(createdAt time.Time) func(*Message) {
+func WithCreatedAt(createdAt time.Time) MessageOption {
 	return func(m *Message) {
 		m.CreatedAt = createdAt
 	}
@@ -54,7 +54,7 @@ func WithCreatedAt(createdAt time.Time) func(*Message) {
 
 // WithScheduledAt sets the time the message should be published.
 // If not provided, the current time will be used.
-func WithScheduledAt(scheduledAt time.Time) func(*Message) {
+func WithScheduledAt(scheduledAt time.Time) MessageOption {
 	return func(m *Message) {
 		m.ScheduledAt = scheduledAt
 	}
