@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	internalDelay "github.com/oagudo/outbox/internal/delay"
+	"github.com/oagudo/outbox/internal/delay"
 )
 
 // MessagePublisher defines an interface for publishing messages to an external system.
@@ -55,7 +55,7 @@ type Reader struct {
 	delayStrategy DelayStrategy
 	maxDelay      time.Duration
 	delay         time.Duration
-	delayFunc     internalDelay.DelayFunc
+	delayFunc     delay.DelayFunc
 
 	started         int32
 	closed          int32
@@ -280,9 +280,9 @@ func NewReader(dbCtx *DBContext, msgPublisher MessagePublisher, opts ...ReaderOp
 	}
 
 	if r.delayStrategy == DelayStrategyExponential {
-		r.delayFunc = internalDelay.ExponentialDelay(r.delay, r.maxDelay)
+		r.delayFunc = delay.ExponentialDelay(r.delay, r.maxDelay)
 	} else {
-		r.delayFunc = internalDelay.FixedDelay(r.delay)
+		r.delayFunc = delay.FixedDelay(r.delay)
 	}
 
 	return r

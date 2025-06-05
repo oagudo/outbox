@@ -6,7 +6,7 @@ import (
 	"errors"
 	"testing"
 
-	coreSql "github.com/oagudo/outbox/internal/sql"
+	"github.com/oagudo/outbox/internal/sqladapter"
 )
 
 type fakeTx struct {
@@ -39,7 +39,7 @@ type fakeTxProvider struct {
 	tx       *fakeTx
 }
 
-func (f *fakeTxProvider) BeginTx(_ context.Context) (coreSql.Tx, error) {
+func (f *fakeTxProvider) BeginTx(_ context.Context) (sqladapter.Tx, error) {
 	if f.beginErr != nil {
 		return nil, f.beginErr
 	}

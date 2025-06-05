@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	coreSql "github.com/oagudo/outbox/internal/sql"
+	"github.com/oagudo/outbox/internal/sqladapter"
 )
 
 // Writer handles storing messages in the outbox table as part of user-defined queries within a database transaction.
@@ -14,7 +14,7 @@ import (
 // immediately after transaction commit.
 type Writer struct {
 	dbCtx        *DBContext
-	sqlExecutor  coreSql.Executor
+	sqlExecutor  sqladapter.Executor
 	msgPublisher MessagePublisher
 
 	optimisticTimeout time.Duration
@@ -56,7 +56,7 @@ func WithOptimisticTimeout(timeout time.Duration) WriterOption {
 // NewWriter creates a new outbox Writer with the given database context and options.
 func NewWriter(dbCtx *DBContext, opts ...WriterOption) *Writer {
 	w := &Writer{
-		sqlExecutor:       &coreSql.DBAdapter{DB: dbCtx.db},
+		sqlExecutor:       &sqladapter.DBAdapter{DB: dbCtx.db},
 		dbCtx:             dbCtx,
 		optimisticTimeout: 10 * time.Second,
 	}
