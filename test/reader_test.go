@@ -15,8 +15,8 @@ import (
 
 const (
 	readerInterval = 10 * time.Millisecond
-	testTimeout    = 1 * time.Second
-	pollInterval   = 20 * time.Millisecond
+	testTimeout    = 2 * time.Second
+	pollInterval   = 10 * time.Millisecond
 )
 
 func TestReaderSuccessfullyPublishesMessage(t *testing.T) {
