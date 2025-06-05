@@ -19,8 +19,14 @@ type Message struct {
 	// CreatedAt is the timestamp when the message was created
 	CreatedAt time.Time
 
-	// Context is optional metadata about the message (correlation ID, trace ID, etc.), typically JSON serialized
-	Context []byte
+	// ScheduledAt is the timestamp when the message should be published
+	ScheduledAt time.Time
+
+	// Metadata is an optional field containing additional information about the message,
+	// such as correlation IDs, trace IDs, user context, or other custom attributes.
+	// This data is typically JSON-serialized and can be used for tracing, debugging, or routing purposes.
+	// Most message brokers support attaching such metadata as message headers, enabling richer message processing and observability.
+	Metadata []byte
 
 	// Payload contains the actual message data, typically JSON serialized
 	Payload []byte
@@ -30,7 +36,7 @@ type Message struct {
 	TimesAttempted int32
 }
 
-// WithID sets the ID of the message.
+// WithID sets the unique identifier of the message.
 // If not provided, a new UUID will be generated.
 func WithID(id uuid.UUID) func(*Message) {
 	return func(m *Message) {
@@ -38,7 +44,7 @@ func WithID(id uuid.UUID) func(*Message) {
 	}
 }
 
-// WithCreatedAt sets the CreatedAt of the message.
+// WithCreatedAt sets the time the message was created.
 // If not provided, the current time will be used.
 func WithCreatedAt(createdAt time.Time) func(*Message) {
 	return func(m *Message) {
@@ -46,12 +52,29 @@ func WithCreatedAt(createdAt time.Time) func(*Message) {
 	}
 }
 
-// NewMessage creates a new Message with the given payload and context.
-func NewMessage(payload []byte, ctx []byte, opts ...MessageOption) *Message {
+// WithScheduledAt sets the time the message should be published.
+// If not provided, the current time will be used.
+func WithScheduledAt(scheduledAt time.Time) func(*Message) {
+	return func(m *Message) {
+		m.ScheduledAt = scheduledAt
+	}
+}
+
+// WithMetadata attaches message metadata (e.g. correlation ID, trace ID, etc).
+func WithMetadata(metadata []byte) MessageOption {
+	return func(m *Message) {
+		m.Metadata = metadata
+	}
+}
+
+// NewMessage creates a new Message with the given payload.
+func NewMessage(payload []byte, opts ...MessageOption) *Message {
+	now := time.Now().UTC()
+
 	m := &Message{
 		ID:             uuid.New(),
-		CreatedAt:      time.Now().UTC(),
-		Context:        ctx,
+		CreatedAt:      now,
+		ScheduledAt:    now,
 		Payload:        payload,
 		TimesAttempted: 0,
 	}

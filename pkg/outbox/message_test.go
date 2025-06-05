@@ -14,9 +14,10 @@ func TestMessageOptions(t *testing.T) {
 
 	msg := NewMessage(
 		[]byte("payload"),
-		[]byte("context"),
 		WithID(customID),
 		WithCreatedAt(customTime),
+		WithScheduledAt(customTime),
+		WithMetadata([]byte("metadata")),
 	)
 
 	if msg.ID != customID {
@@ -25,11 +26,14 @@ func TestMessageOptions(t *testing.T) {
 	if !msg.CreatedAt.Equal(customTime) {
 		t.Errorf("expected CreatedAt to be %v, got %v", customTime, msg.CreatedAt)
 	}
+	if !msg.ScheduledAt.Equal(customTime) {
+		t.Errorf("expected ScheduledAt to be %v, got %v", customTime, msg.ScheduledAt)
+	}
 	if !bytes.Equal(msg.Payload, []byte("payload")) {
 		t.Errorf("expected Payload to be %v, got %v", []byte("payload"), msg.Payload)
 	}
-	if !bytes.Equal(msg.Context, []byte("context")) {
-		t.Errorf("expected Context to be %v, got %v", []byte("context"), msg.Context)
+	if !bytes.Equal(msg.Metadata, []byte("metadata")) {
+		t.Errorf("expected Metadata to be %v, got %v", []byte("metadata"), msg.Metadata)
 	}
 	if msg.TimesAttempted != 0 {
 		t.Errorf("expected TimesAttempted to be 0, got %v", msg.TimesAttempted)

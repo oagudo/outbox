@@ -69,12 +69,14 @@ func TestDialectSucceeds(t *testing.T) {
 				_, err = db.Exec(`
 					CREATE TABLE IF NOT EXISTS Outbox (
 						id TEXT PRIMARY KEY,
-						created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-						context BLOB NOT NULL,
+						created_at DATETIME NOT NULL,
+						scheduled_at DATETIME NOT NULL,
+						metadata BLOB,
 						payload BLOB NOT NULL,
-						times_attempted INTEGER NOT NULL DEFAULT 0
+						times_attempted INTEGER NOT NULL
 					);
 					CREATE INDEX IF NOT EXISTS idx_outbox_created_at ON Outbox (created_at);
+					CREATE INDEX IF NOT EXISTS idx_outbox_scheduled_at ON Outbox (scheduled_at);
 				`)
 				if err != nil {
 					return nil, err
@@ -138,6 +140,7 @@ func TestDialectSucceeds(t *testing.T) {
 				outbox.WithInterval(readerInterval),
 				outbox.WithReadBatchSize(1),
 				outbox.WithMaxAttempts(1),
+				outbox.WithDelay(0),
 			)
 			r.Start()
 
@@ -149,8 +152,7 @@ func TestDialectSucceeds(t *testing.T) {
 				return err == nil && count == 0
 			}, testTimeout, pollInterval)
 
-			err = r.Stop(context.Background())
-			require.NoError(t, err)
+			require.NoError(t, r.Stop(context.Background()))
 		})
 	}
 }

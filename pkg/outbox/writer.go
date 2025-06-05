@@ -92,13 +92,14 @@ func (w *Writer) Write(ctx context.Context, msg *Message, txWorkFunc TxWorkFunc)
 		return fmt.Errorf("failed to execute user-defined query: %w", err)
 	}
 
-	query := fmt.Sprintf("INSERT INTO Outbox (id, created_at, context, payload, times_attempted) VALUES (%s, %s, %s, %s, %s)",
+	query := fmt.Sprintf("INSERT INTO Outbox (id, created_at, scheduled_at, metadata, payload, times_attempted) VALUES (%s, %s, %s, %s, %s, %s)",
 		w.dbCtx.getSQLPlaceholder(1),
 		w.dbCtx.getSQLPlaceholder(2),
 		w.dbCtx.getSQLPlaceholder(3),
 		w.dbCtx.getSQLPlaceholder(4),
-		w.dbCtx.getSQLPlaceholder(5))
-	_, err = tx.ExecContext(ctx, query, w.dbCtx.formatMessageIDForDB(msg), msg.CreatedAt, msg.Context, msg.Payload, 0)
+		w.dbCtx.getSQLPlaceholder(5),
+		w.dbCtx.getSQLPlaceholder(6))
+	_, err = tx.ExecContext(ctx, query, w.dbCtx.formatMessageIDForDB(msg), msg.CreatedAt, msg.ScheduledAt, msg.Metadata, msg.Payload, 0)
 	if err != nil {
 		return fmt.Errorf("failed to store message in outbox: %w", err)
 	}

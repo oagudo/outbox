@@ -61,3 +61,18 @@ func (c *DBContext) getSQLPlaceholder(index int) string {
 		return "?"
 	}
 }
+
+func (c *DBContext) getCurrentTimestampInUTC() string {
+	switch c.dialect {
+	case SQLDialectPostgres:
+		return "CURRENT_TIMESTAMP AT TIME ZONE 'UTC'"
+	case SQLDialectMySQL, SQLDialectMariaDB:
+		return "UTC_TIMESTAMP()"
+	case SQLDialectOracle:
+		return "SYSTIMESTAMP AT TIME ZONE 'UTC'"
+	case SQLDialectSQLServer:
+		return "SYSUTCDATETIME()"
+	default:
+		return "CURRENT_TIMESTAMP"
+	}
+}

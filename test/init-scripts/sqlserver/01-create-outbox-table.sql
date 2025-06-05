@@ -11,11 +11,13 @@ GO
 
 -- Create the Outbox table
 CREATE TABLE Outbox (
-    id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
-    created_at DATETIME2(3) NOT NULL DEFAULT GETUTCDATE(),
-    context VARBINARY(MAX) NOT NULL,
+    id UNIQUEIDENTIFIER PRIMARY KEY,
+    created_at DATETIMEOFFSET(3) NOT NULL,
+    scheduled_at DATETIMEOFFSET(3) NOT NULL,
+    metadata VARBINARY(MAX),
     payload VARBINARY(MAX) NOT NULL,
-    times_attempted INT NOT NULL DEFAULT 0
+    times_attempted INT NOT NULL
 );
 
-CREATE INDEX idx_outbox_created_at ON Outbox (created_at); 
+CREATE INDEX idx_outbox_created_at ON Outbox (created_at);
+CREATE INDEX idx_outbox_scheduled_at ON Outbox (scheduled_at);

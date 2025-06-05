@@ -8,6 +8,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	internalDelay "github.com/oagudo/outbox/internal/delay"
 )
 
 // MessagePublisher defines an interface for publishing messages to an external system.
@@ -49,6 +51,11 @@ type Reader struct {
 	maxMessages     int
 	deleteBatchSize int
 	maxAttempts     int32
+
+	delayStrategy DelayStrategy
+	maxDelay      time.Duration
+	delay         time.Duration
+	delayFunc     internalDelay.DelayFunc
 
 	started         int32
 	closed          int32
@@ -173,6 +180,70 @@ func WithDeleteBatchSize(size int) ReaderOption {
 	}
 }
 
+// DelayStrategy represents the strategy for the delay between attempts to publish a message.
+type DelayStrategy uint8
+
+const (
+	// DelayStrategyFixed means that the delay between attempts to publish a message is fixed.
+	DelayStrategyFixed DelayStrategy = iota
+
+	// DelayStrategyExponential means that the delay between attempts to publish a message is
+	// exponential 2^n where n is the current attempt number.
+	//
+	// For example, with delay 200 miliseconds and maxDelay 1 hour:
+	//
+	// Delay after attempt 0: 200ms
+	// Delay after attempt 1: 400ms
+	// Delay after attempt 2: 800ms
+	// Delay after attempt 3: 1.6s
+	// Delay after attempt 4: 3.2s
+	// Delay after attempt 5: 6.4s
+	// Delay after attempt 6: 12.8s
+	// Delay after attempt 7: 25.6s
+	// Delay after attempt 8: 51.2s
+	// Delay after attempt 9: 1m42.4s
+	// Delay after attempt 10: 3m24.8s
+	// Delay after attempt 11: 6m49.6s
+	// Delay after attempt 12: 13m39.2s
+	// Delay after attempt 13: 27m18.4s
+	// Delay after attempt 14: 54m36.8s
+	// Delay after attempt 15: 1h0m0s
+	// Delay after attempt 16: 1h0m0s
+	// ...
+	DelayStrategyExponential
+)
+
+// WithDelayStrategy sets the delay strategy for the outbox reader.
+// Default is DelayStrategyExponential.
+func WithDelayStrategy(delayStrategy DelayStrategy) ReaderOption {
+	return func(r *Reader) {
+		r.delayStrategy = delayStrategy
+	}
+}
+
+// WithDelay sets the delay between attempts to publish a message.
+// For FixedDelayStrategy, delay is the fixed delay between attempts.
+// For ExponentialDelayStrategy, delay is the initial delay for the exponential delay function.
+// Default is 200 milliseconds.
+func WithDelay(delay time.Duration) ReaderOption {
+	return func(r *Reader) {
+		if delay >= 0 {
+			r.delay = delay
+		}
+	}
+}
+
+// WithMaxDelay sets the maximum delay between attempts to publish a message.
+// Only applicable if DelayStrategy is DelayStrategyExponential.
+// Default is 1 hour.
+func WithMaxDelay(maxDelay time.Duration) ReaderOption {
+	return func(r *Reader) {
+		if maxDelay >= 0 {
+			r.maxDelay = maxDelay
+		}
+	}
+}
+
 // NewReader creates a new outbox Reader with the given database context,
 // message publisher, and options.
 func NewReader(dbCtx *DBContext, msgPublisher MessagePublisher, opts ...ReaderOption) *Reader {
@@ -191,6 +262,9 @@ func NewReader(dbCtx *DBContext, msgPublisher MessagePublisher, opts ...ReaderOp
 		maxMessages:     100,
 		deleteBatchSize: 20,
 		maxAttempts:     math.MaxInt32,
+		delayStrategy:   DelayStrategyExponential,
+		delay:           200 * time.Millisecond,
+		maxDelay:        1 * time.Hour,
 	}
 
 	for _, opt := range opts {
@@ -203,6 +277,12 @@ func NewReader(dbCtx *DBContext, msgPublisher MessagePublisher, opts ...ReaderOp
 
 	if r.discardedMsgsCh == nil {
 		r.discardedMsgsCh = make(chan Message, 128)
+	}
+
+	if r.delayStrategy == DelayStrategyExponential {
+		r.delayFunc = internalDelay.ExponentialDelay(r.delay, r.maxDelay)
+	} else {
+		r.delayFunc = internalDelay.FixedDelay(r.delay)
 	}
 
 	return r
@@ -351,7 +431,7 @@ func (r *Reader) handleMessage(msg *Message) bool {
 
 	r.sendError(ReaderError{Op: OpPublish, Err: err})
 
-	err = r.incrementTimesAttempted(msg)
+	err = r.scheduleNextAttempt(msg)
 	if err != nil {
 		r.sendError(ReaderError{Op: OpUpdate, Err: err})
 	}
@@ -359,15 +439,19 @@ func (r *Reader) handleMessage(msg *Message) bool {
 	return false
 }
 
-func (r *Reader) incrementTimesAttempted(msg *Message) error {
+func (r *Reader) scheduleNextAttempt(msg *Message) error {
 	ctx, cancel := context.WithTimeout(r.ctx, r.updateTimeout)
 	defer cancel()
 
+	delay := r.delayFunc(int(msg.TimesAttempted))
+	scheduledAt := msg.ScheduledAt.Add(delay)
+
 	// nolint:gosec
-	query := fmt.Sprintf("UPDATE Outbox SET times_attempted = times_attempted + 1 WHERE id = %s", r.dbCtx.getSQLPlaceholder(1))
-	_, err := r.dbCtx.db.ExecContext(ctx, query, r.dbCtx.formatMessageIDForDB(msg))
+	query := fmt.Sprintf("UPDATE Outbox SET times_attempted = times_attempted + 1, scheduled_at = %s WHERE id = %s",
+		r.dbCtx.getSQLPlaceholder(1), r.dbCtx.getSQLPlaceholder(2))
+	_, err := r.dbCtx.db.ExecContext(ctx, query, scheduledAt, r.dbCtx.formatMessageIDForDB(msg))
 	if err != nil {
-		return fmt.Errorf("failed to increment times attempted for message %s: %w", msg.ID, err)
+		return fmt.Errorf("failed to schedule next attempt for message %s: %w", msg.ID, err)
 	}
 
 	return nil
@@ -422,7 +506,7 @@ func (r *Reader) readOutboxMessages() ([]*Message, error) {
 	var messages []*Message
 	for rows.Next() {
 		msg := &Message{}
-		if err := rows.Scan(&msg.ID, &msg.Payload, &msg.CreatedAt, &msg.Context, &msg.TimesAttempted); err != nil {
+		if err := rows.Scan(&msg.ID, &msg.Payload, &msg.CreatedAt, &msg.ScheduledAt, &msg.Metadata, &msg.TimesAttempted); err != nil {
 			return nil, fmt.Errorf("failed to scan outbox message: %w", err)
 		}
 		messages = append(messages, msg)
@@ -438,12 +522,21 @@ func (r *Reader) buildSelectMessagesQuery() string {
 
 	switch r.dbCtx.dialect {
 	case SQLDialectOracle:
-		return fmt.Sprintf("SELECT id, payload, created_at, context, times_attempted FROM Outbox ORDER BY created_at ASC FETCH FIRST %s ROWS ONLY", limitPlaceholder)
+		return fmt.Sprintf(`SELECT id, payload, created_at, scheduled_at, metadata, times_attempted 
+			FROM Outbox 
+			WHERE scheduled_at <= %s 
+			ORDER BY created_at ASC FETCH FIRST %s ROWS ONLY`, r.dbCtx.getCurrentTimestampInUTC(), limitPlaceholder)
 
 	case SQLDialectSQLServer:
-		return fmt.Sprintf("SELECT TOP (%s) id, payload, created_at, context, times_attempted FROM Outbox ORDER BY created_at ASC", limitPlaceholder)
+		return fmt.Sprintf(`SELECT TOP (%s) id, payload, created_at, scheduled_at, metadata, times_attempted 
+			FROM Outbox 
+			WHERE scheduled_at <= %s 
+			ORDER BY created_at ASC`, limitPlaceholder, r.dbCtx.getCurrentTimestampInUTC())
 
 	default:
-		return fmt.Sprintf("SELECT id, payload, created_at, context, times_attempted FROM Outbox ORDER BY created_at ASC LIMIT %s", limitPlaceholder)
+		return fmt.Sprintf(`SELECT id, payload, created_at, scheduled_at, metadata, times_attempted 
+			FROM Outbox 
+			WHERE scheduled_at <= %s
+			ORDER BY created_at ASC LIMIT %s`, r.dbCtx.getCurrentTimestampInUTC(), limitPlaceholder)
 	}
 }

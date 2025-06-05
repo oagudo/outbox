@@ -165,8 +165,8 @@ func readOutboxMessage(t *testing.T, id uuid.UUID) (*outbox.Message, bool) {
 	t.Helper()
 
 	var msg outbox.Message
-	err := db.QueryRow("SELECT id, created_at, context, payload, times_attempted FROM Outbox WHERE id = $1", id).Scan(
-		&msg.ID, &msg.CreatedAt, &msg.Context, &msg.Payload, &msg.TimesAttempted,
+	err := db.QueryRow("SELECT id, created_at, scheduled_at, metadata, payload, times_attempted FROM Outbox WHERE id = $1", id).Scan(
+		&msg.ID, &msg.CreatedAt, &msg.ScheduledAt, &msg.Metadata, &msg.Payload, &msg.TimesAttempted,
 	)
 	if err == sql.ErrNoRows {
 		return nil, false
@@ -190,11 +190,15 @@ func readEntity(t *testing.T, id uuid.UUID) (*entity, bool) {
 }
 
 func createMessageFixture(opts ...outbox.MessageOption) *outbox.Message {
-	msgOpts := []outbox.MessageOption{outbox.WithCreatedAt(time.Now().UTC().Truncate(time.Millisecond))}
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	msgOpts := []outbox.MessageOption{
+		outbox.WithCreatedAt(now),
+		outbox.WithScheduledAt(now),
+		outbox.WithMetadata([]byte(`{"any_metadata_key": "any_metadata_value"}`)),
+	}
 	msgOpts = append(msgOpts, opts...)
 	msg := outbox.NewMessage(
 		[]byte(`{"any_payload_key": "any_payload_value"}`),
-		[]byte(`{"any_context_key": "any_context_value"}`),
 		msgOpts...,
 	)
 
@@ -216,7 +220,7 @@ func assertMessageEqual(t *testing.T, expected, actual *outbox.Message) {
 
 	require.Equal(t, expected.ID, actual.ID)
 	require.True(t, expected.CreatedAt.Equal(actual.CreatedAt))
-	require.Equal(t, expected.Context, actual.Context)
+	require.Equal(t, expected.Metadata, actual.Metadata)
 	require.Equal(t, expected.Payload, actual.Payload)
 }
 

@@ -18,6 +18,9 @@ Lightweight library for the [transactional outbox pattern](https://microservices
 - **Database Agnostic:** Designed to work with PostgreSQL, MySQL, CockroachDB, and other relational databases.
 - **Message Broker Agnostic:** Integrates seamlessly with popular brokers like Kafka, NATS, RabbitMQ, and others.
 - **Optimistic Publishing:** Optional immediate async message publishing after transaction commit for reduced latency, with guaranteed delivery fallback.
+- **Configurable Retry & Backoff Policies:** Fixed or exponential back-off with adjustable initial and maximum delay.
+- **Max-Attempts Safeguard:** Automatically discards messages that exceed a configurable `maxAttempts` threshold, enabling dead-letter routing.
+- **Observability:** Non-blocking, buffered channels expose processing errors and discarded messages for easy metrics/alerting integration.
 - **Simplicity:** Minimal, easy-to-understand codebase focused on core outbox pattern concepts.
 - **Extensible:** Designed for easy customization and integration into your own projects.
 
@@ -48,9 +51,11 @@ entity := Entity{
     CreatedAt: time.Now().UTC(),
 }
 
-entityAsJSON, _ := json.Marshal(entity)
-msgCtx := json.RawMessage(`{"trace_id":"abc123","correlation_id":"xyz789"}`) // Any relevant metadata for the message
-msg := outbox.NewMessage(entityAsJSON, msgCtx, outbox.WithCreatedAt(entity.CreatedAt))
+payload, _ := json.Marshal(entity)
+metadata := json.RawMessage(`{"trace_id":"abc123","correlation_id":"xyz789"}`) // Any relevant metadata for the message
+msg := outbox.NewMessage(payload,
+    outbox.WithCreatedAt(entity.CreatedAt),
+    outbox.WithMetadata(metadata))
 
 // Write message and entity in a single transaction
 err = writer.Write(ctx, msg, func(ctx context.Context, execInTx outbox.ExecInTxFunc) error {
@@ -113,7 +118,11 @@ reader := outbox.NewReader(
     outbox.WithInterval(5*time.Second), // Polling interval (default: 10s)
     outbox.WithReadBatchSize(200),      // Read batch size (default: 100)
     outbox.WithDeleteBatchSize(50),     // Delete batch size (default: 20)
-    outbox.WithMaxAttempts(300)         // Discard after 300 attempts (default: MaxInt32)
+    outbox.WithMaxAttempts(300),        // Discard after 300 attempts (default: MaxInt32)
+    // Retry/backoff configuration shown with their default values:
+    outbox.WithDelayStrategy(outbox.DelayStrategyExponential), // or Fixed
+    outbox.WithDelay(200*time.Millisecond), // Initial delay between attempts
+    outbox.WithMaxDelay(1*time.Hour),       // Upper bound for exponential backoff
 )
 reader.Start()
 defer reader.Stop(context.Background()) // Stop during application shutdown
@@ -161,13 +170,15 @@ The outbox table stores messages that need to be published to your message broke
 ```sql
 CREATE TABLE IF NOT EXISTS Outbox (
     id UUID PRIMARY KEY,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    context BYTEA NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    scheduled_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    metadata BYTEA,
     payload BYTEA NOT NULL,
-    times_attempted INTEGER NOT NULL DEFAULT 0
+    times_attempted INTEGER NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_outbox_created_at ON Outbox (created_at);
+CREATE INDEX IF NOT EXISTS idx_outbox_scheduled_at ON Outbox (scheduled_at);
 ```
 </details>
 
@@ -177,13 +188,15 @@ CREATE INDEX IF NOT EXISTS idx_outbox_created_at ON Outbox (created_at);
 ```sql
 CREATE TABLE IF NOT EXISTS Outbox (
     id BINARY(16) PRIMARY KEY,
-    created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-    context BLOB NOT NULL,
+    created_at TIMESTAMP(3) NOT NULL,
+    scheduled_at TIMESTAMP(3) NOT NULL,
+    metadata BLOB,
     payload BLOB NOT NULL,
-    times_attempted INT NOT NULL DEFAULT 0
+    times_attempted INT NOT NULL
 );
 
 CREATE INDEX idx_outbox_created_at ON Outbox (created_at);
+CREATE INDEX idx_outbox_scheduled_at ON Outbox (scheduled_at);
 ```
 </details>
 
@@ -193,13 +206,15 @@ CREATE INDEX idx_outbox_created_at ON Outbox (created_at);
 ```sql
 CREATE TABLE IF NOT EXISTS Outbox (
     id UUID PRIMARY KEY,
-    created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-    context BLOB NOT NULL,
+    created_at TIMESTAMP(3) NOT NULL,
+    scheduled_at TIMESTAMP(3) NOT NULL,
+    metadata BLOB,
     payload BLOB NOT NULL,
-    times_attempted INT NOT NULL DEFAULT 0
+    times_attempted INT NOT NULL
 );
 
 CREATE INDEX idx_outbox_created_at ON Outbox (created_at);
+CREATE INDEX idx_outbox_scheduled_at ON Outbox (scheduled_at);
 ```
 </details>
 
@@ -209,13 +224,15 @@ CREATE INDEX idx_outbox_created_at ON Outbox (created_at);
 ```sql
 CREATE TABLE IF NOT EXISTS Outbox (
     id TEXT PRIMARY KEY,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    context BLOB NOT NULL,
+    created_at DATETIME NOT NULL,
+    scheduled_at DATETIME NOT NULL,
+    metadata BLOB,
     payload BLOB NOT NULL,
-    times_attempted INTEGER NOT NULL DEFAULT 0
+    times_attempted INTEGER NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_outbox_created_at ON Outbox (created_at);
+CREATE INDEX IF NOT EXISTS idx_outbox_scheduled_at ON Outbox (scheduled_at);
 ```
 </details>
 
@@ -225,13 +242,15 @@ CREATE INDEX IF NOT EXISTS idx_outbox_created_at ON Outbox (created_at);
 ```sql
 CREATE TABLE Outbox (
     id RAW(16) PRIMARY KEY,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL,
-    context BLOB NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    scheduled_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    metadata BLOB,
     payload BLOB NOT NULL,
-    times_attempted NUMBER(10) DEFAULT 0 NOT NULL
+    times_attempted NUMBER(10) NOT NULL
 );
 
 CREATE INDEX idx_outbox_created_at ON Outbox (created_at);
+CREATE INDEX idx_outbox_scheduled_at ON Outbox (scheduled_at);
 ```
 </details>
 
@@ -240,14 +259,16 @@ CREATE INDEX idx_outbox_created_at ON Outbox (created_at);
 
 ```sql
 CREATE TABLE Outbox (
-    id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
-    created_at DATETIME2(3) NOT NULL DEFAULT GETUTCDATE(),
-    context VARBINARY(MAX) NOT NULL,
+    id UNIQUEIDENTIFIER PRIMARY KEY,
+    created_at DATETIMEOFFSET(3) NOT NULL,
+    scheduled_at DATETIMEOFFSET(3) NOT NULL,
+    metadata VARBINARY(MAX),
     payload VARBINARY(MAX) NOT NULL,
-    times_attempted INT NOT NULL DEFAULT 0
+    times_attempted INT NOT NULL
 );
 
 CREATE INDEX idx_outbox_created_at ON Outbox (created_at);
+CREATE INDEX idx_outbox_scheduled_at ON Outbox (scheduled_at);
 ```
 </details>
 

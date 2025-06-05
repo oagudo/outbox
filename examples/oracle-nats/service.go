@@ -37,9 +37,9 @@ type messagePublisher struct {
 }
 
 func (p *messagePublisher) Publish(ctx context.Context, msg *outbox.Message) error {
-	msgContext := map[string]string{}
-	if err := json.Unmarshal(msg.Context, &msgContext); err != nil {
-		log.Printf("failed to unmarshal message context: %v", err)
+	msgMetadata := map[string]string{}
+	if err := json.Unmarshal(msg.Metadata, &msgMetadata); err != nil {
+		log.Printf("failed to unmarshal message metadata: %v", err)
 		return err
 	}
 
@@ -53,8 +53,8 @@ func (p *messagePublisher) Publish(ctx context.Context, msg *outbox.Message) err
 	// Add message ID as a header
 	natsMsg.Header.Set("message_id", msg.ID.String())
 
-	// Add context as headers
-	for k, v := range msgContext {
+	// Add metadata as headers
+	for k, v := range msgMetadata {
 		natsMsg.Header.Set(k, v)
 	}
 
@@ -64,7 +64,7 @@ func (p *messagePublisher) Publish(ctx context.Context, msg *outbox.Message) err
 		return err
 	}
 
-	log.Printf("published message %s with content %s and headers %s", msg.ID, string(msg.Payload), string(msg.Context))
+	log.Printf("published message %s with content %s and metadata %s", msg.ID, string(msg.Payload), string(msg.Metadata))
 
 	return nil
 }
@@ -108,22 +108,22 @@ func main() {
 			ID:        uuid.New(),
 			CreatedAt: time.Now().UTC(),
 		}
-		entityJSON, err := json.Marshal(entity)
+		entityAsJSON, err := json.Marshal(entity)
 		if err != nil {
 			http.Error(w, "failed to marshal entity", http.StatusInternalServerError)
 			return
 		}
 
-		msgContext := map[string]string{
-			string(natsTraceIDHeaderKey):       uuid.New().String(), // Add any context you need to the message (eg. trace_id, correlation_id, etc)
+		msgMetadata := map[string]string{
+			string(natsTraceIDHeaderKey):       uuid.New().String(), // Add any metadata you need to the message (eg. trace_id, correlation_id, etc)
 			string(natsCorrelationIDHeaderKey): uuid.New().String(),
 		}
-		msgContextJSON, err := json.Marshal(msgContext)
+		msgMetadataAsJSON, err := json.Marshal(msgMetadata)
 		if err != nil {
-			http.Error(w, "failed to marshal message context", http.StatusInternalServerError)
+			http.Error(w, "failed to marshal message metadata", http.StatusInternalServerError)
 			return
 		}
-		msg := outbox.NewMessage(entityJSON, msgContextJSON, outbox.WithCreatedAt(entity.CreatedAt))
+		msg := outbox.NewMessage(entityAsJSON, outbox.WithCreatedAt(entity.CreatedAt), outbox.WithMetadata(msgMetadataAsJSON))
 		err = writer.Write(r.Context(), msg, func(ctx context.Context, execInTx outbox.ExecInTxFunc) error {
 			_, err := execInTx(r.Context(),
 				"INSERT INTO Entity (id, created_at) VALUES (:1, :2)",
@@ -142,7 +142,7 @@ func main() {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		w.Write(entityJSON)
+		w.Write(entityAsJSON)
 	})
 
 	srv := &http.Server{
