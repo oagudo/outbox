@@ -37,3 +37,8 @@ func (a *DBAdapter) ExecContext(ctx context.Context, query string, args ...any) 
 	_, err := a.DB.ExecContext(ctx, query, args...)
 	return err
 }
+
+// ExecContextWithResult executes a query and returns the sql.Result for advanced use-cases (e.g., checking affected rows).
+func (a *DBAdapter) ExecContextWithResult(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	return a.DB.ExecContext(ctx, query, args...)
+}

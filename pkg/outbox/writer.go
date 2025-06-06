@@ -119,13 +119,37 @@ func (w *Writer) Write(ctx context.Context, msg *Message, txWorkFunc TxWorkFunc)
 	return nil
 }
 
+// publishMessage attempts to publish a message optimistically and conditionally deletes it only if it hasn't been touched by the reader.
 func (w *Writer) publishMessage(ctx context.Context, msg *Message) {
 	ctx, cancel := context.WithTimeout(ctx, w.optimisticTimeout)
 	defer cancel()
 
 	err := w.msgPublisher.Publish(ctx, msg)
-	if err == nil {
-		query := fmt.Sprintf("DELETE FROM outbox WHERE id = %s", w.dbCtx.getSQLPlaceholder(1))
-		_ = w.sqlExecutor.ExecContext(ctx, query, w.dbCtx.formatMessageIDForDB(msg))
+	if err != nil {
+		// If publishing fails, do not delete. The reader will retry later.
+		return
+	}
+
+	// Conditionally delete the message only if it hasn't been touched by the reader.
+	// This prevents a race where the reader fails to publish, updates the attempt count,
+	// and the optimistic publisher deletes the row out from under it.
+	query := fmt.Sprintf("DELETE FROM outbox WHERE id = %s AND times_attempted = 0", w.dbCtx.getSQLPlaceholder(1))
+	res, err := w.sqlExecutor.ExecContextWithResult(ctx, query, w.dbCtx.formatMessageIDForDB(msg))
+	if err != nil {
+		// A delete failure isn't critical, as the reader will eventually clean it up.
+		// Optionally log this error.
+		return
+	}
+
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		// Not critical, could be logged.
+		return
+	}
+
+	if rowsAffected == 0 {
+		// This means the reader won the race and has already updated the row.
+		// Let the reader's retry logic take over.
+		return
 	}
 }

@@ -14,4 +14,6 @@ type Tx interface {
 type Executor interface {
 	BeginTx(ctx context.Context) (Tx, error)
 	ExecContext(ctx context.Context, query string, args ...any) error
+	// ExecContextWithResult executes a query and returns the sql.Result for advanced use-cases (e.g., checking affected rows).
+	ExecContextWithResult(ctx context.Context, query string, args ...any) (sql.Result, error)
 }

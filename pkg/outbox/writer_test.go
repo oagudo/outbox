@@ -39,6 +39,87 @@ type fakeTxProvider struct {
 	tx       *fakeTx
 }
 
+func (f *fakeTxProvider) ExecContextWithResult(_ context.Context, _ string, _ ...any) (sql.Result, error) {
+	return nil, nil
+}
+
+// dummyResult implements sql.Result for controlled testing
+// of RowsAffected return value.
+type dummyResult struct {
+	rows int64
+}
+
+func (d *dummyResult) LastInsertId() (int64, error) { return 0, nil }
+func (d *dummyResult) RowsAffected() (int64, error) { return d.rows, nil }
+
+// testPublisher is a MessagePublisher that records Publish calls and can simulate success/failure.
+type testPublisher struct {
+	shouldFail bool
+	called     bool
+}
+
+func (p *testPublisher) Publish(_ context.Context, _ *Message) error {
+	p.called = true
+	if p.shouldFail {
+		return errors.New("publish failed")
+	}
+	return nil
+}
+
+// testExecutor implements sqladapter.Executor for publishMessage testing.
+type testExecutor struct {
+	deleteCalled bool
+	rowsAffected int64
+}
+
+func (t *testExecutor) BeginTx(ctx context.Context) (sqladapter.Tx, error) { return nil, nil }
+func (t *testExecutor) ExecContext(ctx context.Context, query string, args ...any) error { return nil }
+func (t *testExecutor) ExecContextWithResult(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	t.deleteCalled = true
+	return &dummyResult{rows: t.rowsAffected}, nil
+}
+
+// --- TEST: publishMessage conditional delete logic ---
+func TestPublishMessage_ConditionalDelete(t *testing.T) {
+	t.Run("delete when times_attempted is zero", func(t *testing.T) {
+		exec := &testExecutor{rowsAffected: 1}
+		pub := &testPublisher{shouldFail: false}
+		w := &Writer{sqlExecutor: exec, msgPublisher: pub, optimisticTimeout: 1}
+		w.dbCtx = &DBContext{dialect: SQLDialectPostgres, db: nil} // dbCtx only used for placeholder
+		msg := &Message{}
+		w.publishMessage(context.Background(), msg)
+		if !exec.deleteCalled {
+			t.Error("expected delete to be called when times_attempted is zero")
+		}
+	})
+
+	t.Run("backs off when another process has modified the message", func(t *testing.T) {
+		exec := &testExecutor{rowsAffected: 0}
+		pub := &testPublisher{shouldFail: false}
+		w := &Writer{sqlExecutor: exec, msgPublisher: pub, optimisticTimeout: 1}
+		w.dbCtx = &DBContext{dialect: SQLDialectPostgres, db: nil}
+		msg := &Message{}
+		w.publishMessage(context.Background(), msg)
+		if !exec.deleteCalled {
+			t.Error("expected delete to be called even if rowsAffected is zero (should check race)")
+		}
+	})
+
+	t.Run("no delete when publish fails", func(t *testing.T) {
+		exec := &testExecutor{rowsAffected: 1}
+		pub := &testPublisher{shouldFail: true}
+		w := &Writer{sqlExecutor: exec, msgPublisher: pub, optimisticTimeout: 1}
+		w.dbCtx = &DBContext{dialect: SQLDialectPostgres, db: nil}
+		msg := &Message{}
+		w.publishMessage(context.Background(), msg)
+		if exec.deleteCalled {
+			t.Error("expected delete NOT to be called if publish fails")
+		}
+	})
+}
+
+
+
 func (f *fakeTxProvider) BeginTx(_ context.Context) (sqladapter.Tx, error) {
 	if f.beginErr != nil {
 		return nil, f.beginErr
