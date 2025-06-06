@@ -14,10 +14,14 @@ import (
 
 // MessagePublisher defines an interface for publishing messages to an external system.
 type MessagePublisher interface {
-	// Publish sends a message to an external system (like a message broker).
-	// This function can be invoked multiple times for the same message.
-	// Message consumers must be idempotent and not affected by receiving duplicate messages,
-	// though some brokers also provide deduplication features.
+	// Publish sends a message to an external system (e.g., a message broker).
+	// This function may be called multiple times for the same message.
+	// Consumers must be idempotent and handle duplicate messages,
+	// though some brokers provide deduplication features.
+	// Return nil on success.
+	// Return error on failure. In this case:
+	// - The message will be retried according to the configured retry and backoff settings
+	// - or will be discarded if the maximum number of attempts is reached.
 	Publish(ctx context.Context, msg *Message) error
 }
 
