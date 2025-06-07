@@ -294,7 +294,7 @@ curl -X POST http://localhost:8080/entity
 
 ## FAQ
 
-### What happens when running multiple service instances?
+### What happens when multiple instances of my service use the library?
 
 When running multiple instances of your service, each with its own reader, be aware that:
 
