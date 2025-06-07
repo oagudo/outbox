@@ -302,12 +302,12 @@ When running multiple instances of your service, each with its own reader, be aw
 - This can result in duplicate message publishing
 - To handle this, you can either:
   1. Ensure your consumers are idempotent and accept duplicates
-  2. Use broker-side deduplication if available (e.g., NATS JetStream's Msg-Id)
-  3. Run the reader in a single instance only
+  2. Use broker-side deduplication if available (e.g. NATS JetStream's Msg-Id)
+  3. Run the reader in a single instance only (e.g. single replica deployment in k8s with reader)
 
-Using the optimistic publisher feature can help minimize the duplicate window as it publishes messages immediately after the database transaction is committed, reducing the time window in which readers could pick up the same message.
+The optimistic publisher feature can significantly reduce the number of duplicates. With optimistic publisher messages are delivered as soon as they are committed, so readers will usually see no messages in the outbox table.
 
-**Note** that even in single-instance deployments, message duplicates can still occur (e.g., if the service crashes right after successfully publishing to the broker). However, these duplicates are less frequent compared to multi-instance deployments.
+**Note** that even in single instance deployments, message duplicates can still occur (e.g. if the service crashes right after successfully publishing to the broker). However, these duplicates are less frequent compared to multi instance deployments.
 
 ## Contributing
 
