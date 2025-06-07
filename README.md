@@ -292,6 +292,23 @@ go run service.go
 curl -X POST http://localhost:8080/entity
 ```
 
+## FAQ
+
+### What happens when running multiple service instances?
+
+When running multiple instances of your service, each with its own reader, be aware that:
+
+- Multiple readers will independently poll for messages
+- This can result in duplicate message publishing
+- To handle this, you can either:
+  1. Ensure your consumers are idempotent and accept duplicates
+  2. Use broker-side deduplication if available (e.g., NATS JetStream's Msg-Id)
+  3. Run the reader in a single instance only
+
+Using the optimistic publisher feature can help minimize the duplicate window.
+
+Note that even if you run in a single instance, message duplicates are expected (e.g. service crash right after sending message) but they are less likely to happen.
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.

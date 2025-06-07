@@ -39,6 +39,8 @@ type WriterOption func(*Writer)
 //
 // Note: optimistic path is just an efficiency optimization, not something the system
 // depends on for correctness. If the message is not published, it will be retried by the reader.
+// Due to this retry mechanism, duplicate message deliveries may occur
+// (e.g. reader wakes up just after message is committed).
 func WithOptimisticPublisher(msgPublisher MessagePublisher) WriterOption {
 	return func(w *Writer) {
 		w.msgPublisher = msgPublisher
