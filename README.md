@@ -305,9 +305,9 @@ When running multiple instances of your service, each with its own reader, be aw
   2. Use broker-side deduplication if available (e.g., NATS JetStream's Msg-Id)
   3. Run the reader in a single instance only
 
-Using the optimistic publisher feature can help minimize the duplicate window.
+Using the optimistic publisher feature can help minimize the duplicate window as it publishes messages immediately after the database transaction is committed, reducing the time window in which readers could pick up the same message.
 
-Note that even if you run in a single instance, message duplicates are expected (e.g. service crash right after sending message) but they are less likely to happen.
+**Note** that even in single-instance deployments, message duplicates can still occur (e.g., if the service crashes right after successfully publishing to the broker). However, these duplicates are less frequent compared to multi-instance deployments.
 
 ## Contributing
 
