@@ -5,9 +5,27 @@ import (
 	"database/sql"
 	"errors"
 	"testing"
-
-	"github.com/oagudo/outbox/internal/sqladapter"
 )
+
+type fakeDB struct {
+	beginTxErr error
+	tx         *fakeTx
+}
+
+func (f *fakeDB) BeginTx(_ context.Context, _ *sql.TxOptions) (Tx, error) {
+	if f.beginTxErr != nil {
+		return nil, f.beginTxErr
+	}
+	return f.tx, nil
+}
+
+func (f *fakeDB) ExecContext(_ context.Context, _ string, _ ...any) (sql.Result, error) {
+	return nil, nil
+}
+
+func (f *fakeDB) QueryContext(_ context.Context, _ string, _ ...any) (*sql.Rows, error) {
+	return nil, nil
+}
 
 type fakeTx struct {
 	execErr     error
@@ -24,6 +42,10 @@ func (f *fakeTx) ExecContext(_ context.Context, _ string, _ ...any) (sql.Result,
 	return nil, f.execErr
 }
 
+func (f *fakeTx) QueryContext(_ context.Context, _ string, _ ...any) (*sql.Rows, error) {
+	return nil, nil
+}
+
 func (f *fakeTx) Commit() error {
 	f.committed = true
 	return f.commitErr
@@ -34,28 +56,13 @@ func (f *fakeTx) Rollback() error {
 	return f.rollbackErr
 }
 
-type fakeTxProvider struct {
-	beginErr error
-	tx       *fakeTx
-}
-
-func (f *fakeTxProvider) BeginTx(_ context.Context) (sqladapter.Tx, error) {
-	if f.beginErr != nil {
-		return nil, f.beginErr
-	}
-	return f.tx, nil
-}
-
-func (f *fakeTxProvider) ExecContext(_ context.Context, _ string, _ ...any) error {
-	return nil
-}
-
 func TestWriterSucceed(t *testing.T) {
-	txProvider := &fakeTxProvider{tx: &fakeTx{}}
-	writer := &Writer{sqlExecutor: txProvider, dbCtx: &DBContext{dialect: SQLDialectPostgres}}
+	tx := &fakeTx{}
+	db := &fakeDB{tx: tx}
+	writer := NewWriter(NewDBContext(db, SQLDialectPostgres))
 
 	var callbackCalled bool
-	err := writer.Write(context.Background(), &Message{}, func(_ context.Context, _ ExecInTxFunc) error {
+	err := writer.Write(context.Background(), &Message{}, func(_ context.Context, _ TxQueryer) error {
 		callbackCalled = true
 		return nil
 	})
@@ -67,22 +74,23 @@ func TestWriterSucceed(t *testing.T) {
 	if !callbackCalled {
 		t.Fatal("expected callback to be called")
 	}
-	if !txProvider.tx.execCalled {
+	if !tx.execCalled {
 		t.Fatal("expected tx.ExecContext to be called")
 	}
-	if txProvider.tx.rolledBack {
+	if tx.rolledBack {
 		t.Fatal("expected tx not to be rolled back")
 	}
-	if !txProvider.tx.committed {
+	if !tx.committed {
 		t.Fatal("expected tx to be committed")
 	}
 }
 
 func TestWriterErrorOnTxBegin(t *testing.T) {
-	txProvider := &fakeTxProvider{beginErr: errors.New("failed to begin transaction"), tx: &fakeTx{}}
-	writer := &Writer{sqlExecutor: txProvider, dbCtx: &DBContext{dialect: SQLDialectPostgres}}
+	tx := &fakeTx{}
+	db := &fakeDB{beginTxErr: errors.New("failed to begin transaction"), tx: tx}
+	writer := NewWriter(NewDBContext(db, SQLDialectPostgres))
 
-	err := writer.Write(context.Background(), &Message{}, func(_ context.Context, _ ExecInTxFunc) error {
+	err := writer.Write(context.Background(), &Message{}, func(_ context.Context, _ TxQueryer) error {
 		t.Fatal("should not be called")
 		return nil
 	})
@@ -90,42 +98,43 @@ func TestWriterErrorOnTxBegin(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error")
 	}
-	if !errors.Is(err, txProvider.beginErr) {
-		t.Fatalf("expected error to be %v, got: %v", txProvider.beginErr, err)
+	if !errors.Is(err, db.beginTxErr) {
+		t.Fatalf("expected error to be %v, got: %v", db.beginTxErr, err)
 	}
 
-	if txProvider.tx.execCalled {
+	if tx.execCalled {
 		t.Fatal("expected tx.ExecContext not to be called")
 	}
-	if txProvider.tx.committed {
+	if tx.committed {
 		t.Fatal("expected tx not to be committed")
 	}
-	if txProvider.tx.rolledBack {
+	if tx.rolledBack {
 		t.Fatal("expected tx not to be rolled back")
 	}
 }
 
 func TestWriterErrorOnTxCommit(t *testing.T) {
-	txProvider := &fakeTxProvider{tx: &fakeTx{commitErr: errors.New("failed to commit transaction")}}
-	writer := &Writer{sqlExecutor: txProvider, dbCtx: &DBContext{dialect: SQLDialectPostgres}}
+	tx := &fakeTx{commitErr: errors.New("failed to commit transaction")}
+	db := &fakeDB{tx: tx}
+	writer := NewWriter(NewDBContext(db, SQLDialectPostgres))
 
 	var callbackCalled bool
-	err := writer.Write(context.Background(), &Message{}, func(_ context.Context, _ ExecInTxFunc) error {
+	err := writer.Write(context.Background(), &Message{}, func(_ context.Context, _ TxQueryer) error {
 		callbackCalled = true
 		return nil
 	})
 
-	if !errors.Is(err, txProvider.tx.commitErr) {
-		t.Fatalf("expected error to be %v, got: %v", txProvider.tx.commitErr, err)
+	if !errors.Is(err, tx.commitErr) {
+		t.Fatalf("expected error to be %v, got: %v", tx.commitErr, err)
 	}
 
 	if !callbackCalled {
 		t.Fatal("expected callback to be called")
 	}
-	if !txProvider.tx.execCalled {
+	if !tx.execCalled {
 		t.Fatal("expected tx.ExecContext to be called")
 	}
-	if !txProvider.tx.rolledBack {
+	if !tx.rolledBack {
 		t.Fatal("expected tx to be rolled back")
 	}
 }

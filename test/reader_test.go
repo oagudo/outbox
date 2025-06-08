@@ -471,7 +471,7 @@ func TestReaderDiscardsMessageAfterOptimisticPublishFailure(t *testing.T) {
 
 	anyMsg := createMessageFixture()
 	writer := outbox.NewWriter(dbCtx, outbox.WithOptimisticPublisher(failingPublisher))
-	err := writer.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.ExecInTxFunc) error {
+	err := writer.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxQueryer) error {
 		return nil
 	})
 	require.NoError(t, err)
@@ -602,7 +602,7 @@ func setupTest(t *testing.T) *outbox.DBContext {
 
 	require.NoError(t, truncateOutboxTable())
 
-	return outbox.NewDBContext(db, outbox.SQLDialectPostgres)
+	return outbox.NewDBContext(outbox.NewDB(db), outbox.SQLDialectPostgres)
 }
 
 func countMessages(t *testing.T) int {
@@ -617,9 +617,9 @@ func countMessages(t *testing.T) int {
 func writeMessage(t *testing.T, msg *outbox.Message) {
 	t.Helper()
 
-	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
+	dbCtx := outbox.NewDBContext(outbox.NewDB(db), outbox.SQLDialectPostgres)
 	w := outbox.NewWriter(dbCtx)
-	err := w.Write(context.Background(), msg, func(_ context.Context, _ outbox.ExecInTxFunc) error {
+	err := w.Write(context.Background(), msg, func(_ context.Context, _ outbox.TxQueryer) error {
 		return nil
 	})
 	require.NoError(t, err)

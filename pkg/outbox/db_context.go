@@ -1,6 +1,7 @@
 package outbox
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 )
@@ -18,14 +19,40 @@ const (
 	SQLDialectSQLServer SQLDialect = "sqlserver"
 )
 
+// Queryer represents a query executor.
+type Queryer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+// TxQueryer represents a query executor inside a transaction.
+type TxQueryer interface {
+	Queryer
+}
+
+// Tx represents a database transaction.
+// It is compatible with the standard sql.Tx type.
+type Tx interface {
+	Commit() error
+	Rollback() error
+	TxQueryer
+}
+
+// DB represents a database connection.
+// It is compatible with the standard sql.DB type.
+type DB interface {
+	BeginTx(ctx context.Context, opts *sql.TxOptions) (Tx, error)
+	Queryer
+}
+
 // DBContext holds the database connection and the SQL dialect.
 type DBContext struct {
-	db      *sql.DB
+	db      DB
 	dialect SQLDialect
 }
 
 // NewDBContext creates a new DBContext.
-func NewDBContext(db *sql.DB, dialect SQLDialect) *DBContext {
+func NewDBContext(db DB, dialect SQLDialect) *DBContext {
 	return &DBContext{
 		db:      db,
 		dialect: dialect,

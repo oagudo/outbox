@@ -2,11 +2,8 @@ package outbox
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"time"
-
-	"github.com/oagudo/outbox/internal/sqladapter"
 )
 
 // Writer handles storing messages in the outbox table as part of user-defined queries within a database transaction.
@@ -14,20 +11,15 @@ import (
 // immediately after transaction commit.
 type Writer struct {
 	dbCtx        *DBContext
-	sqlExecutor  sqladapter.Executor
 	msgPublisher MessagePublisher
 
 	optimisticTimeout time.Duration
 }
 
-// ExecInTxFunc executes user-defined queries within the same transaction
-// that stores the outbox message.
-type ExecInTxFunc func(ctx context.Context, query string, args ...any) (sql.Result, error)
-
-// TxWorkFunc is user-supplied callback that accepts a function (ExecInTxFunc)
+// TxWorkFunc is user-supplied callback that accepts a TxQueryer parameter
 // that executes user-defined queries within the transaction that stores a message in the outbox.
 // The Writer itself commits or rolls back the transaction once the callback and the outbox insert complete.
-type TxWorkFunc func(ctx context.Context, execInTx ExecInTxFunc) error
+type TxWorkFunc func(ctx context.Context, txQueryer TxQueryer) error
 
 // WriterOption is a function that configures a Writer instance.
 type WriterOption func(*Writer)
@@ -58,7 +50,6 @@ func WithOptimisticTimeout(timeout time.Duration) WriterOption {
 // NewWriter creates a new outbox Writer with the given database context and options.
 func NewWriter(dbCtx *DBContext, opts ...WriterOption) *Writer {
 	w := &Writer{
-		sqlExecutor:       &sqladapter.DBAdapter{DB: dbCtx.db},
 		dbCtx:             dbCtx,
 		optimisticTimeout: 10 * time.Second,
 	}
@@ -77,7 +68,7 @@ func NewWriter(dbCtx *DBContext, opts ...WriterOption) *Writer {
 // If optimistic publishing is enabled, the message will also be published to the external system
 // after the transaction is committed asynchronously.
 func (w *Writer) Write(ctx context.Context, msg *Message, txWorkFunc TxWorkFunc) error {
-	tx, err := w.sqlExecutor.BeginTx(ctx)
+	tx, err := w.dbCtx.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
@@ -89,7 +80,7 @@ func (w *Writer) Write(ctx context.Context, msg *Message, txWorkFunc TxWorkFunc)
 		}
 	}()
 
-	err = txWorkFunc(ctx, tx.ExecContext)
+	err = txWorkFunc(ctx, tx)
 	if err != nil {
 		return fmt.Errorf("failed to execute user-defined query: %w", err)
 	}
@@ -128,6 +119,6 @@ func (w *Writer) publishMessage(ctx context.Context, msg *Message) {
 	err := w.msgPublisher.Publish(ctx, msg)
 	if err == nil {
 		query := fmt.Sprintf("DELETE FROM outbox WHERE id = %s", w.dbCtx.getSQLPlaceholder(1))
-		_ = w.sqlExecutor.ExecContext(ctx, query, w.dbCtx.formatMessageIDForDB(msg))
+		_, _ = w.dbCtx.db.ExecContext(ctx, query, w.dbCtx.formatMessageIDForDB(msg))
 	}
 }

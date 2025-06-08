@@ -112,17 +112,17 @@ func TestDialectSucceeds(t *testing.T) {
 				_ = db.Close()
 			}()
 
-			dbCtx := outbox.NewDBContext(db, tt.dialect)
+			dbCtx := outbox.NewDBContext(outbox.NewDB(db), tt.dialect)
 			w := outbox.NewWriter(dbCtx)
 
 			successMsg := createMessageFixture()
-			err = w.Write(context.Background(), successMsg, func(_ context.Context, _ outbox.ExecInTxFunc) error {
+			err = w.Write(context.Background(), successMsg, func(_ context.Context, _ outbox.TxQueryer) error {
 				return nil
 			})
 			require.NoError(t, err)
 
 			failingMsg := createMessageFixture(outbox.WithCreatedAt(successMsg.CreatedAt.Add(1 * time.Second)))
-			err = w.Write(context.Background(), failingMsg, func(_ context.Context, _ outbox.ExecInTxFunc) error {
+			err = w.Write(context.Background(), failingMsg, func(_ context.Context, _ outbox.TxQueryer) error {
 				return nil
 			})
 			require.NoError(t, err)

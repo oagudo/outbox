@@ -40,7 +40,7 @@ The Writer ensures your entity and outbox message are stored together atomically
 db, _ := sql.Open("pgx", "postgres://user:password@localhost:5432/outbox?sslmode=disable")
 
 // Create a DBContext and Writer instance
-dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
+dbCtx := outbox.NewDBContext(outbox.NewDB(db), outbox.SQLDialectPostgres)
 writer := outbox.NewWriter(dbCtx)
 
 // In your business logic:
@@ -58,15 +58,16 @@ msg := outbox.NewMessage(payload,
     outbox.WithMetadata(metadata))
 
 // Write message and entity in a single transaction
-err = writer.Write(ctx, msg, func(ctx context.Context, execInTx outbox.ExecInTxFunc) error {
-    // This user-defined query executes within the 
+err = writer.Write(ctx, msg,
+    // This user-defined callback executes queries within the
     // same transaction that stores the outbox message
-    _, err := execInTx(ctx, 
-        "INSERT INTO entity (id, created_at) VALUES (?, ?)",
-        entity.ID, entity.CreatedAt,
-    )
-    return err
-})
+    func(ctx context.Context, txQueryer outbox.TxQueryer) error {
+        _, err := txQueryer.ExecContext(ctx,
+            "INSERT INTO entity (id, created_at) VALUES ($1, $2)",
+            entity.ID, entity.CreatedAt,
+        )
+        return err
+    })
 ```
 
 <details>

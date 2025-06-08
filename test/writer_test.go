@@ -20,15 +20,23 @@ type entity struct {
 }
 
 func TestWriterSuccessfullyWritesToOutbox(t *testing.T) {
-	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
+	dbCtx := outbox.NewDBContext(outbox.NewDB(db), outbox.SQLDialectPostgres)
 	w := outbox.NewWriter(dbCtx)
 
 	anyMsg := createMessageFixture()
 	anyEntity := createEntityFixture()
 
-	err := w.Write(context.Background(), anyMsg, func(ctx context.Context, execInTx outbox.ExecInTxFunc) error {
-		_, err := execInTx(ctx, "INSERT INTO entity (id, created_at) VALUES ($1, $2)", anyEntity.ID, anyEntity.CreatedAt)
+	err := w.Write(context.Background(), anyMsg, func(ctx context.Context, txQueryer outbox.TxQueryer) error {
+		rows, err := txQueryer.QueryContext(ctx, "SELECT id, created_at FROM entity WHERE id = $1", anyEntity.ID)
 		require.NoError(t, err)
+		defer func() {
+			_ = rows.Close()
+		}()
+		require.False(t, rows.Next())
+
+		_, err = txQueryer.ExecContext(ctx, "INSERT INTO entity (id, created_at) VALUES ($1, $2)", anyEntity.ID, anyEntity.CreatedAt)
+		require.NoError(t, err)
+
 		return nil
 	})
 	require.NoError(t, err)
@@ -43,18 +51,18 @@ func TestWriterSuccessfullyWritesToOutbox(t *testing.T) {
 }
 
 func TestWriterRollsBackOnOutboxMessageWriteError(t *testing.T) {
-	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
+	dbCtx := outbox.NewDBContext(outbox.NewDB(db), outbox.SQLDialectPostgres)
 	w := outbox.NewWriter(dbCtx)
 
 	anyMsg := createMessageFixture()
-	err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.ExecInTxFunc) error {
+	err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxQueryer) error {
 		return nil
 	})
 	require.NoError(t, err)
 
 	anyEntity := createEntityFixture()
-	err = w.Write(context.Background(), anyMsg, func(ctx context.Context, execInTx outbox.ExecInTxFunc) error {
-		_, err := execInTx(ctx, "INSERT INTO entity (id, created_at) VALUES ($1, $2)", anyEntity.ID, anyEntity.CreatedAt)
+	err = w.Write(context.Background(), anyMsg, func(ctx context.Context, txQueryer outbox.TxQueryer) error {
+		_, err := txQueryer.ExecContext(ctx, "INSERT INTO entity (id, created_at) VALUES ($1, $2)", anyEntity.ID, anyEntity.CreatedAt)
 		require.NoError(t, err)
 		return nil
 	})
@@ -68,12 +76,12 @@ func TestWriterRollsBackOnOutboxMessageWriteError(t *testing.T) {
 }
 
 func TestWriterRollsBackOnUserDefinedCallbackError(t *testing.T) {
-	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
+	dbCtx := outbox.NewDBContext(outbox.NewDB(db), outbox.SQLDialectPostgres)
 	w := outbox.NewWriter(dbCtx)
 
 	anyMsg := createMessageFixture()
 
-	err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.ExecInTxFunc) error {
+	err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxQueryer) error {
 		return errors.New("any error in callback")
 	})
 
@@ -102,11 +110,11 @@ func (p *fakePublisher) Publish(ctx context.Context, msg *outbox.Message) error 
 func TestWriterWithOptimisticPublisher(t *testing.T) {
 	t.Run("publishes message and removes it from outbox if callback succeeds", func(t *testing.T) {
 		publisher := &fakePublisher{}
-		dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
+		dbCtx := outbox.NewDBContext(outbox.NewDB(db), outbox.SQLDialectPostgres)
 		w := outbox.NewWriter(dbCtx, outbox.WithOptimisticPublisher(publisher))
 
 		anyMsg := createMessageFixture()
-		err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.ExecInTxFunc) error {
+		err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxQueryer) error {
 			return nil
 		})
 		require.NoError(t, err)
@@ -123,11 +131,11 @@ func TestWriterWithOptimisticPublisher(t *testing.T) {
 				return errors.New("any publisher error")
 			},
 		}
-		dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
+		dbCtx := outbox.NewDBContext(outbox.NewDB(db), outbox.SQLDialectPostgres)
 		w := outbox.NewWriter(dbCtx, outbox.WithOptimisticPublisher(publisher))
 
 		anyMsg := createMessageFixture()
-		err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.ExecInTxFunc) error {
+		err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxQueryer) error {
 			return nil
 		})
 		require.NoError(t, err)
@@ -142,14 +150,14 @@ func TestWriterWithOptimisticPublisher(t *testing.T) {
 
 	t.Run("does not remove message from outbox if optimistic publishing takes too long", func(t *testing.T) {
 		publisher := &fakePublisher{}
-		dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
+		dbCtx := outbox.NewDBContext(outbox.NewDB(db), outbox.SQLDialectPostgres)
 		w := outbox.NewWriter(dbCtx,
 			outbox.WithOptimisticPublisher(publisher),
 			outbox.WithOptimisticTimeout(0), // context should be cancelled
 		)
 
 		anyMsg := createMessageFixture()
-		err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.ExecInTxFunc) error {
+		err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxQueryer) error {
 			return nil
 		})
 		require.NoError(t, err)

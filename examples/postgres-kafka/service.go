@@ -82,7 +82,7 @@ func main() {
 	defer kafkaWriter.Close()
 
 	// Outbox setup
-	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
+	dbCtx := outbox.NewDBContext(outbox.NewDB(db), outbox.SQLDialectPostgres)
 	writer := outbox.NewWriter(dbCtx)
 	reader := outbox.NewReader(dbCtx, &messagePublisher{kafkaWriter: kafkaWriter}, outbox.WithInterval(1*time.Second))
 	reader.Start()
@@ -120,8 +120,8 @@ func main() {
 			return
 		}
 		msg := outbox.NewMessage(entityAsJSON, outbox.WithCreatedAt(entity.CreatedAt), outbox.WithMetadata(msgMetadataAsJSON))
-		err = writer.Write(r.Context(), msg, func(ctx context.Context, execInTx outbox.ExecInTxFunc) error {
-			_, err := execInTx(ctx,
+		err = writer.Write(r.Context(), msg, func(ctx context.Context, txQueryer outbox.TxQueryer) error {
+			_, err := txQueryer.ExecContext(ctx,
 				"INSERT INTO entity (id, created_at) VALUES ($1, $2)",
 				entity.ID, entity.CreatedAt,
 			)

@@ -111,7 +111,7 @@ func main() {
 	}
 
 	// Outbox setup
-	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectMySQL)
+	dbCtx := outbox.NewDBContext(outbox.NewDB(db), outbox.SQLDialectMySQL)
 	writer := outbox.NewWriter(dbCtx)
 	reader := outbox.NewReader(dbCtx, &messagePublisher{
 		conn:    conn,
@@ -154,8 +154,8 @@ func main() {
 			return
 		}
 		msg := outbox.NewMessage(entityAsJSON, outbox.WithCreatedAt(entity.CreatedAt), outbox.WithMetadata(msgMetadataJSON))
-		err = writer.Write(r.Context(), msg, func(ctx context.Context, execInTx outbox.ExecInTxFunc) error {
-			_, err := execInTx(ctx,
+		err = writer.Write(r.Context(), msg, func(ctx context.Context, txQueryer outbox.TxQueryer) error {
+			_, err := txQueryer.ExecContext(ctx,
 				"INSERT INTO entity (id, created_at) VALUES (?, ?)",
 				entity.ID[:], entity.CreatedAt,
 			)
