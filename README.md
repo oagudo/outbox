@@ -159,7 +159,7 @@ The library supports multiple relational databases. Configure the appropriate `S
 
 ```go
 // Example creating a DBContext with MySQL dialect
-dbCtx := outbox.NewDBContext(db, outbox.SQLDialectMySQL)
+dbCtx := outbox.NewDBContext(outbox.NewDB(db), outbox.SQLDialectMySQL)
 ```
 
 #### 2. Create the Outbox Table
