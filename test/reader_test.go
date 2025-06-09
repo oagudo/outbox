@@ -649,8 +649,7 @@ func waitForReadError(t *testing.T, r *outbox.Reader, expectedErr error) {
 			}
 			switch e := err.(type) {
 			case *outbox.ReadError:
-				assert.ErrorIs(t, e.Err, expectedErr,
-					"expected error to match expected type")
+				assert.ErrorIs(t, e, expectedErr)
 			default:
 				return false
 			}
@@ -673,8 +672,7 @@ func waitForDeleteError(t *testing.T, r *outbox.Reader, expectedMsgs []*outbox.M
 			}
 			switch e := err.(type) {
 			case *outbox.DeleteError:
-				assert.ErrorIs(t, e.Err, expectedErr,
-					"expected error to match expected type")
+				assert.ErrorIs(t, e, expectedErr)
 				assert.Equal(t, len(e.Messages), len(expectedMsgs))
 				for i, msg := range e.Messages {
 					assertMessageEqual(t, expectedMsgs[i], &msg)
@@ -701,8 +699,7 @@ func waitForUpdateError(t *testing.T, r *outbox.Reader, expectedMsg *outbox.Mess
 			}
 			switch e := err.(type) {
 			case *outbox.UpdateError:
-				assert.ErrorIs(t, e.Err, expectedErr,
-					"expected error to match expected type")
+				assert.ErrorIs(t, e, expectedErr)
 				assertMessageEqual(t, expectedMsg, &e.Message)
 			default:
 				return false
@@ -726,8 +723,7 @@ func waitForPublishError(t *testing.T, r *outbox.Reader, expectedMsg *outbox.Mes
 			}
 			switch e := err.(type) {
 			case *outbox.PublishError:
-				assert.ErrorIs(t, e.Err, expectedErr,
-					"expected error to match expected type")
+				assert.ErrorIs(t, e, expectedErr)
 				assertMessageEqual(t, expectedMsg, &e.Message)
 			default:
 				return false
