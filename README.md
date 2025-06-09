@@ -129,11 +129,31 @@ reader := outbox.NewReader(
 reader.Start()
 defer reader.Stop(context.Background()) // Stop during application shutdown
 
-
-// Monitor standard processing errors (read / publish / delete / update).
+// Monitor standard processing errors (publish / update / delete / read).
 go func() {
     for err := range reader.Errors() {
-        log.Printf("outbox %s error: %v", err.Op, err.Err)
+        switch e := err.(type) {
+        case *outbox.PublishError:
+            log.Printf("Failed to publish message | ID: %s | Error: %v",
+                e.Message.ID, e.Err)
+
+        case *outbox.UpdateError:
+            log.Printf("Failed to update message | ID: %s | Error: %v",
+                e.Message.ID, e.Err)
+
+        case *outbox.DeleteError:
+            log.Printf("Batch message deletion failed | Count: %d | Error: %v",
+                len(e.Messages), e.Err)
+            for _, msg := range e.Messages {
+                log.Printf("Failed to delete message | ID: %s", msg.ID)
+            }
+
+        case *outbox.ReadError:
+            log.Printf("Failed to read outbox messages | Error: %v", e.Err)
+
+        default:
+            log.Printf("Unexpected error occurred | Error: %v", e)
+        }
     }
 }()
 

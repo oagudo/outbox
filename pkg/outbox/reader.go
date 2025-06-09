@@ -25,22 +25,6 @@ type MessagePublisher interface {
 	Publish(ctx context.Context, msg *Message) error
 }
 
-// OpKind represents the type of operation that failed.
-type OpKind uint8
-
-const (
-	OpRead    OpKind = iota // reading messages from the outbox
-	OpUpdate                // updating a message in the outbox table
-	OpPublish               // publishing messages to the external system
-	OpDelete                // deleting messages from the outbox
-)
-
-// ReaderError represents an error that occurred during a reader operation.
-type ReaderError struct {
-	Op  OpKind
-	Err error
-}
-
 // Reader periodically reads unpublished messages from the outbox table
 // and attempts to publish them to an external system.
 type Reader struct {
@@ -66,7 +50,7 @@ type Reader struct {
 	ctx             context.Context
 	cancel          context.CancelFunc
 	wg              sync.WaitGroup
-	errCh           chan ReaderError
+	errCh           chan error
 	discardedMsgsCh chan Message
 }
 
@@ -128,7 +112,7 @@ func WithReadBatchSize(batchSize int) ReaderOption {
 func WithErrorChannelSize(size int) ReaderOption {
 	return func(r *Reader) {
 		if size > 0 {
-			r.errCh = make(chan ReaderError, size)
+			r.errCh = make(chan error, size)
 		}
 	}
 }
@@ -276,7 +260,7 @@ func NewReader(dbCtx *DBContext, msgPublisher MessagePublisher, opts ...ReaderOp
 	}
 
 	if r.errCh == nil {
-		r.errCh = make(chan ReaderError, 128)
+		r.errCh = make(chan error, 128)
 	}
 
 	if r.discardedMsgsCh == nil {
@@ -349,13 +333,91 @@ func (r *Reader) Stop(ctx context.Context) error {
 	}
 }
 
+// PublishError indicates an error during message publication.
+// It includes the message that failed to be published and the original error.
+type PublishError struct {
+	Message Message
+	Err     error
+}
+
+func (e *PublishError) Error() string {
+	return fmt.Sprintf("failed to publish message %s: %v", e.Message.ID, e.Err)
+}
+func (e *PublishError) Unwrap() error { return e.Err }
+
+// UpdateError indicates an error when updating a message in the outbox.
+// It includes the message that failed to be updated and the original error.
+type UpdateError struct {
+	Message Message
+	Err     error
+}
+
+func (e *UpdateError) Error() string {
+	return fmt.Sprintf("failed to update message %s: %v", e.Message.ID, e.Err)
+}
+func (e *UpdateError) Unwrap() error { return e.Err }
+
+// DeleteError indicates an error during the batch deletion of messages.
+// It includes the messages that failed to be deleted and the original error.
+type DeleteError struct {
+	Messages []Message
+	Err      error
+}
+
+func (e *DeleteError) Error() string {
+	return fmt.Sprintf("failed to delete %d messages: %v", len(e.Messages), e.Err)
+}
+func (e *DeleteError) Unwrap() error { return e.Err }
+
+// ReadError indicates an error when reading messages from the outbox.
+type ReadError struct {
+	Err error
+}
+
+func (e *ReadError) Error() string { return fmt.Sprintf("failed to read outbox messages: %v", e.Err) }
+
+func (e *ReadError) Unwrap() error { return e.Err }
+
 // Errors returns a channel that receives errors from the outbox reader.
 // The channel is buffered to prevent blocking the reader. If the buffer becomes
 // full, subsequent errors will be dropped to maintain reader throughput.
 // The channel is closed when the reader is stopped.
 //
-// Consumers should drain this channel promptly to avoid missing errors.
-func (r *Reader) Errors() <-chan ReaderError {
+// The returned error will be one of the following types, which can be checked
+// using a type switch:
+//   - *PublishError: Failed to publish a message. Contains the message.
+//   - *UpdateError:  Failed to update a message after a failed publish attempt.
+//     Contains the message.
+//   - *DeleteError:  Failed to delete a batch of messages. Contains the messages.
+//   - *ReadError:    Failed to read messages from the outbox.
+//
+// Example of error handling:
+//
+//	for err := range r.Errors() {
+//		switch e := err.(type) {
+//		case *outbox.PublishError:
+//			log.Printf("Failed to publish message | ID: %s | Error: %v",
+//				e.Message.ID, e.Err)
+//
+//		case *outbox.UpdateError:
+//			log.Printf("Failed to update message | ID: %s | Error: %v",
+//				e.Message.ID, e.Err)
+//
+//		case *outbox.DeleteError:
+//			log.Printf("Batch message deletion failed | Count: %d | Error: %v",
+//				len(e.Messages), e.Err)
+//			for _, msg := range e.Messages {
+//				log.Printf("Failed to delete message | ID: %s", msg.ID)
+//			}
+//
+//		case *outbox.ReadError:
+//			log.Printf("Failed to read outbox messages | Error: %v", e.Err)
+//
+//		default:
+//			log.Printf("Unexpected error occurred | Error: %v", e)
+//		}
+//	}
+func (r *Reader) Errors() <-chan error {
 	return r.errCh
 }
 
@@ -368,7 +430,7 @@ func (r *Reader) DiscardedMessages() <-chan Message {
 	return r.discardedMsgsCh
 }
 
-func (r *Reader) sendError(err ReaderError) {
+func (r *Reader) sendError(err error) {
 	select {
 	case r.errCh <- err:
 	default:
@@ -387,7 +449,7 @@ func (r *Reader) sendDiscardedMessage(msg *Message) {
 func (r *Reader) publishMessages() {
 	msgs, err := r.readOutboxMessages()
 	if err != nil {
-		r.sendError(ReaderError{Op: OpRead, Err: err})
+		r.sendError(&ReadError{Err: err})
 	}
 
 	msgsToDelete := make([]*Message, 0, r.deleteBatchSize)
@@ -403,22 +465,30 @@ func (r *Reader) publishMessages() {
 	}
 
 	// delete remaining messages as next tick would read them again otherwise
-	err = r.deleteMessagesInBatch(msgsToDelete)
+	err = r.deleteMessages(msgsToDelete)
 	if err != nil {
-		r.sendError(ReaderError{Op: OpDelete, Err: err})
+		r.sendError(&DeleteError{Messages: copyMessages(msgsToDelete), Err: err})
 	}
 }
 
-func (r *Reader) flushIfFull(batch []*Message) bool {
-	if len(batch) < r.deleteBatchSize {
+func copyMessages(msgs []*Message) []Message {
+	copied := make([]Message, len(msgs))
+	for i, msg := range msgs {
+		copied[i] = *msg
+	}
+	return copied
+}
+
+func (r *Reader) flushIfFull(msgsToDelete []*Message) bool {
+	if len(msgsToDelete) < r.deleteBatchSize {
 		return false
 	}
-	err := r.deleteMessagesInBatch(batch)
+	err := r.deleteMessages(msgsToDelete)
 	if err == nil {
 		return true
 	}
 
-	r.sendError(ReaderError{Op: OpDelete, Err: err})
+	r.sendError(&DeleteError{Messages: copyMessages(msgsToDelete), Err: err})
 	return false
 }
 
@@ -438,11 +508,11 @@ func (r *Reader) handleMessage(msg *Message) bool {
 		return true
 	}
 
-	r.sendError(ReaderError{Op: OpPublish, Err: err})
+	r.sendError(&PublishError{Message: *msg, Err: err})
 
 	err = r.scheduleNextAttempt(msg)
 	if err != nil {
-		r.sendError(ReaderError{Op: OpUpdate, Err: err})
+		r.sendError(&UpdateError{Message: *msg, Err: err})
 	}
 
 	return false
@@ -473,8 +543,8 @@ func (r *Reader) publishMessage(msg *Message) error {
 	return r.msgPublisher.Publish(ctx, msg)
 }
 
-func (r *Reader) deleteMessagesInBatch(batch []*Message) error {
-	if len(batch) == 0 {
+func (r *Reader) deleteMessages(msgsToDelete []*Message) error {
+	if len(msgsToDelete) == 0 {
 		return nil
 	}
 
@@ -482,9 +552,9 @@ func (r *Reader) deleteMessagesInBatch(batch []*Message) error {
 	ctx, cancel := context.WithTimeout(context.Background(), r.deleteTimeout)
 	defer cancel()
 
-	placeholders := make([]string, 0, len(batch))
-	ids := make([]any, 0, len(batch))
-	for idx, msg := range batch {
+	placeholders := make([]string, 0, len(msgsToDelete))
+	ids := make([]any, 0, len(msgsToDelete))
+	for idx, msg := range msgsToDelete {
 		placeholders = append(placeholders, r.dbCtx.getSQLPlaceholder(idx+1))
 		ids = append(ids, r.dbCtx.formatMessageIDForDB(msg))
 	}
@@ -492,7 +562,7 @@ func (r *Reader) deleteMessagesInBatch(batch []*Message) error {
 	query := fmt.Sprintf("DELETE FROM outbox WHERE id IN (%s)", strings.Join(placeholders, ", "))
 	_, err := r.dbCtx.db.ExecContext(ctx, query, ids...)
 	if err != nil {
-		return fmt.Errorf("failed to delete messages from outbox: %w", err)
+		return err
 	}
 
 	return nil
@@ -506,7 +576,7 @@ func (r *Reader) readOutboxMessages() ([]*Message, error) {
 	query := r.buildSelectMessagesQuery()
 	rows, err := r.dbCtx.db.QueryContext(ctx, query, r.maxMessages)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read outbox messages: %w", err)
+		return nil, fmt.Errorf("failed to query outbox messages: %w", err)
 	}
 	defer func() {
 		_ = rows.Close()

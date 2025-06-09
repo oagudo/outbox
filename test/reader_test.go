@@ -103,9 +103,9 @@ func TestReaderRetriesFailedPublishAndRetainsMessage(t *testing.T) {
 		outbox.WithDelay(0))
 	r.Start()
 
-	waitForReaderError(t, r, outbox.OpPublish, publishErr)
-	waitForReaderError(t, r, outbox.OpPublish, publishErr)
-	waitForReaderError(t, r, outbox.OpPublish, publishErr)
+	waitForPublishError(t, r, failingMsg, publishErr)
+	waitForPublishError(t, r, failingMsg, publishErr)
+	waitForPublishError(t, r, failingMsg, publishErr)
 
 	require.Equal(t, 1, countMessages(t))
 
@@ -155,7 +155,7 @@ func TestShouldTimeoutWhenReadingMessagesTakesTooLong(t *testing.T) {
 	)
 	r.Start()
 
-	waitForReaderError(t, r, outbox.OpRead, context.DeadlineExceeded)
+	waitForReadError(t, r, context.DeadlineExceeded)
 
 	require.NoError(t, r.Stop(context.Background()))
 }
@@ -173,7 +173,7 @@ func TestShouldTimeoutWhenPublishingMessagesTakesTooLong(t *testing.T) {
 
 	r.Start()
 
-	waitForReaderError(t, r, outbox.OpPublish, context.DeadlineExceeded)
+	waitForPublishError(t, r, anyMsg, context.DeadlineExceeded)
 
 	require.NoError(t, r.Stop(context.Background()))
 }
@@ -181,7 +181,9 @@ func TestShouldTimeoutWhenPublishingMessagesTakesTooLong(t *testing.T) {
 func TestShouldTimeoutWhenDeletingMessagesAtTheEndOfBatchTakesTooLong(t *testing.T) {
 	dbCtx := setupTest(t)
 
-	writeMessage(t, createMessageFixture())
+	firstMsg := createMessageFixture()
+	secondMsg := createMessageFixture()
+	writeMessages(t, []*outbox.Message{firstMsg, secondMsg})
 
 	r := outbox.NewReader(dbCtx, &fakePublisher{},
 		outbox.WithInterval(readerInterval),
@@ -189,7 +191,7 @@ func TestShouldTimeoutWhenDeletingMessagesAtTheEndOfBatchTakesTooLong(t *testing
 	)
 	r.Start()
 
-	waitForReaderError(t, r, outbox.OpDelete, context.DeadlineExceeded)
+	waitForDeleteError(t, r, []*outbox.Message{firstMsg, secondMsg}, context.DeadlineExceeded)
 
 	require.NoError(t, r.Stop(context.Background()))
 }
@@ -197,7 +199,9 @@ func TestShouldTimeoutWhenDeletingMessagesAtTheEndOfBatchTakesTooLong(t *testing
 func TestShouldTimeoutWhenDeletingMessagesDuringBatchIterationTakesTooLong(t *testing.T) {
 	dbCtx := setupTest(t)
 
-	writeMessages(t, []*outbox.Message{createMessageFixture(), createMessageFixture()})
+	firstMsg := createMessageFixture()
+	secondMsg := createMessageFixture()
+	writeMessages(t, []*outbox.Message{firstMsg, secondMsg})
 
 	r := outbox.NewReader(dbCtx, &fakePublisher{},
 		outbox.WithInterval(readerInterval),
@@ -206,7 +210,7 @@ func TestShouldTimeoutWhenDeletingMessagesDuringBatchIterationTakesTooLong(t *te
 	)
 	r.Start()
 
-	waitForReaderError(t, r, outbox.OpDelete, context.DeadlineExceeded)
+	waitForDeleteError(t, r, []*outbox.Message{firstMsg}, context.DeadlineExceeded)
 
 	require.NoError(t, r.Stop(context.Background()))
 }
@@ -227,7 +231,7 @@ func TestShouldTimeoutWhenUpdatingMessagesTakesTooLong(t *testing.T) {
 	)
 	r.Start()
 
-	waitForReaderError(t, r, outbox.OpUpdate, context.DeadlineExceeded)
+	waitForUpdateError(t, r, anyMsg, context.DeadlineExceeded)
 
 	require.NoError(t, r.Stop(context.Background()))
 }
@@ -286,7 +290,8 @@ func TestMultipleStopCalls(t *testing.T) {
 func TestReaderDiscardsErrorsIfBufferIsFull(t *testing.T) {
 	dbCtx := setupTest(t)
 
-	writeMessage(t, createMessageFixture())
+	anyMsg := createMessageFixture()
+	writeMessage(t, anyMsg)
 
 	firstErr := errors.New("first error during publish")
 	secondErr := errors.New("second error during publish")
@@ -318,8 +323,8 @@ func TestReaderDiscardsErrorsIfBufferIsFull(t *testing.T) {
 
 	wg.Wait()
 
-	waitForReaderError(t, r, outbox.OpPublish, firstErr)
-	waitForReaderError(t, r, outbox.OpPublish, subsequentErr) // second error is be discarded
+	waitForPublishError(t, r, anyMsg, firstErr)
+	waitForPublishError(t, r, anyMsg, subsequentErr) // second error is be discarded
 
 	require.NoError(t, r.Stop(context.Background()))
 }
@@ -633,7 +638,7 @@ func writeMessages(t *testing.T, msgs []*outbox.Message) {
 	}
 }
 
-func waitForReaderError(t *testing.T, r *outbox.Reader, expectedOp outbox.OpKind, expectedErr error) {
+func waitForReadError(t *testing.T, r *outbox.Reader, expectedErr error) {
 	t.Helper()
 
 	require.Eventually(t, func() bool {
@@ -642,12 +647,91 @@ func waitForReaderError(t *testing.T, r *outbox.Reader, expectedOp outbox.OpKind
 			if !ok { // channel closed by Reader
 				return false
 			}
-			if err.Op != expectedOp {
+			switch e := err.(type) {
+			case *outbox.ReadError:
+				assert.ErrorIs(t, e.Err, expectedErr,
+					"expected error to match expected type")
+			default:
 				return false
 			}
 
-			assert.ErrorIs(t, err.Err, expectedErr,
-				"expected error to match expected type")
+			return true
+		default:
+			return false
+		}
+	}, testTimeout, pollInterval)
+}
+
+func waitForDeleteError(t *testing.T, r *outbox.Reader, expectedMsgs []*outbox.Message, expectedErr error) {
+	t.Helper()
+
+	require.Eventually(t, func() bool {
+		select {
+		case err, ok := <-r.Errors():
+			if !ok { // channel closed by Reader
+				return false
+			}
+			switch e := err.(type) {
+			case *outbox.DeleteError:
+				assert.ErrorIs(t, e.Err, expectedErr,
+					"expected error to match expected type")
+				assert.Equal(t, len(e.Messages), len(expectedMsgs))
+				for i, msg := range e.Messages {
+					assertMessageEqual(t, expectedMsgs[i], &msg)
+				}
+			default:
+				return false
+			}
+
+			return true
+		default:
+			return false
+		}
+	}, testTimeout, pollInterval)
+}
+
+func waitForUpdateError(t *testing.T, r *outbox.Reader, expectedMsg *outbox.Message, expectedErr error) {
+	t.Helper()
+
+	require.Eventually(t, func() bool {
+		select {
+		case err, ok := <-r.Errors():
+			if !ok { // channel closed by Reader
+				return false
+			}
+			switch e := err.(type) {
+			case *outbox.UpdateError:
+				assert.ErrorIs(t, e.Err, expectedErr,
+					"expected error to match expected type")
+				assertMessageEqual(t, expectedMsg, &e.Message)
+			default:
+				return false
+			}
+
+			return true
+		default:
+			return false
+		}
+	}, testTimeout, pollInterval)
+}
+
+func waitForPublishError(t *testing.T, r *outbox.Reader, expectedMsg *outbox.Message, expectedErr error) {
+	t.Helper()
+
+	require.Eventually(t, func() bool {
+		select {
+		case err, ok := <-r.Errors():
+			if !ok { // channel closed by Reader
+				return false
+			}
+			switch e := err.(type) {
+			case *outbox.PublishError:
+				assert.ErrorIs(t, e.Err, expectedErr,
+					"expected error to match expected type")
+				assertMessageEqual(t, expectedMsg, &e.Message)
+			default:
+				return false
+			}
 
 			return true
 		default:
