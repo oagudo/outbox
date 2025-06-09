@@ -112,7 +112,7 @@ func TestDialectSucceeds(t *testing.T) {
 				_ = db.Close()
 			}()
 
-			dbCtx := outbox.NewDBContext(outbox.NewDB(db), tt.dialect)
+			dbCtx := outbox.NewDBContext(db, tt.dialect)
 			w := outbox.NewWriter(dbCtx)
 
 			successMsg := createMessageFixture()

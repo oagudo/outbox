@@ -59,7 +59,7 @@ func (f *fakeTx) Rollback() error {
 func TestWriterSucceed(t *testing.T) {
 	tx := &fakeTx{}
 	db := &fakeDB{tx: tx}
-	writer := NewWriter(NewDBContext(db, SQLDialectPostgres))
+	writer := NewWriter(NewDBContextWithDB(db, SQLDialectPostgres))
 
 	var callbackCalled bool
 	err := writer.Write(context.Background(), &Message{}, func(_ context.Context, _ TxQueryer) error {
@@ -88,7 +88,7 @@ func TestWriterSucceed(t *testing.T) {
 func TestWriterErrorOnTxBegin(t *testing.T) {
 	tx := &fakeTx{}
 	db := &fakeDB{beginTxErr: errors.New("failed to begin transaction"), tx: tx}
-	writer := NewWriter(NewDBContext(db, SQLDialectPostgres))
+	writer := NewWriter(NewDBContextWithDB(db, SQLDialectPostgres))
 
 	err := writer.Write(context.Background(), &Message{}, func(_ context.Context, _ TxQueryer) error {
 		t.Fatal("should not be called")
@@ -116,7 +116,7 @@ func TestWriterErrorOnTxBegin(t *testing.T) {
 func TestWriterErrorOnTxCommit(t *testing.T) {
 	tx := &fakeTx{commitErr: errors.New("failed to commit transaction")}
 	db := &fakeDB{tx: tx}
-	writer := NewWriter(NewDBContext(db, SQLDialectPostgres))
+	writer := NewWriter(NewDBContextWithDB(db, SQLDialectPostgres))
 
 	var callbackCalled bool
 	err := writer.Write(context.Background(), &Message{}, func(_ context.Context, _ TxQueryer) error {

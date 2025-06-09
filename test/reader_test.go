@@ -602,7 +602,7 @@ func setupTest(t *testing.T) *outbox.DBContext {
 
 	require.NoError(t, truncateOutboxTable())
 
-	return outbox.NewDBContext(outbox.NewDB(db), outbox.SQLDialectPostgres)
+	return outbox.NewDBContext(db, outbox.SQLDialectPostgres)
 }
 
 func countMessages(t *testing.T) int {
@@ -617,7 +617,7 @@ func countMessages(t *testing.T) int {
 func writeMessage(t *testing.T, msg *outbox.Message) {
 	t.Helper()
 
-	dbCtx := outbox.NewDBContext(outbox.NewDB(db), outbox.SQLDialectPostgres)
+	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
 	w := outbox.NewWriter(dbCtx)
 	err := w.Write(context.Background(), msg, func(_ context.Context, _ outbox.TxQueryer) error {
 		return nil

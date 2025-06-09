@@ -20,7 +20,7 @@ type entity struct {
 }
 
 func TestWriterSuccessfullyWritesToOutbox(t *testing.T) {
-	dbCtx := outbox.NewDBContext(outbox.NewDB(db), outbox.SQLDialectPostgres)
+	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
 	w := outbox.NewWriter(dbCtx)
 
 	anyMsg := createMessageFixture()
@@ -51,7 +51,7 @@ func TestWriterSuccessfullyWritesToOutbox(t *testing.T) {
 }
 
 func TestWriterErrorOnTxBegin(t *testing.T) {
-	dbCtx := outbox.NewDBContext(outbox.NewDB(db), outbox.SQLDialectPostgres)
+	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
 	w := outbox.NewWriter(dbCtx)
 
 	anyMsg := createMessageFixture()
@@ -70,7 +70,7 @@ func TestWriterErrorOnTxBegin(t *testing.T) {
 }
 
 func TestWriterRollsBackOnOutboxMessageWriteError(t *testing.T) {
-	dbCtx := outbox.NewDBContext(outbox.NewDB(db), outbox.SQLDialectPostgres)
+	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
 	w := outbox.NewWriter(dbCtx)
 
 	anyMsg := createMessageFixture()
@@ -95,7 +95,7 @@ func TestWriterRollsBackOnOutboxMessageWriteError(t *testing.T) {
 }
 
 func TestWriterRollsBackOnUserDefinedCallbackError(t *testing.T) {
-	dbCtx := outbox.NewDBContext(outbox.NewDB(db), outbox.SQLDialectPostgres)
+	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
 	w := outbox.NewWriter(dbCtx)
 
 	anyMsg := createMessageFixture()
@@ -129,7 +129,7 @@ func (p *fakePublisher) Publish(ctx context.Context, msg *outbox.Message) error 
 func TestWriterWithOptimisticPublisher(t *testing.T) {
 	t.Run("publishes message and removes it from outbox if callback succeeds", func(t *testing.T) {
 		publisher := &fakePublisher{}
-		dbCtx := outbox.NewDBContext(outbox.NewDB(db), outbox.SQLDialectPostgres)
+		dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
 		w := outbox.NewWriter(dbCtx, outbox.WithOptimisticPublisher(publisher))
 
 		anyMsg := createMessageFixture()
@@ -150,7 +150,7 @@ func TestWriterWithOptimisticPublisher(t *testing.T) {
 				return errors.New("any publisher error")
 			},
 		}
-		dbCtx := outbox.NewDBContext(outbox.NewDB(db), outbox.SQLDialectPostgres)
+		dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
 		w := outbox.NewWriter(dbCtx, outbox.WithOptimisticPublisher(publisher))
 
 		anyMsg := createMessageFixture()
@@ -169,7 +169,7 @@ func TestWriterWithOptimisticPublisher(t *testing.T) {
 
 	t.Run("does not remove message from outbox if optimistic publishing takes too long", func(t *testing.T) {
 		publisher := &fakePublisher{}
-		dbCtx := outbox.NewDBContext(outbox.NewDB(db), outbox.SQLDialectPostgres)
+		dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
 		w := outbox.NewWriter(dbCtx,
 			outbox.WithOptimisticPublisher(publisher),
 			outbox.WithOptimisticTimeout(0), // context should be cancelled

@@ -40,7 +40,7 @@ The Writer ensures your entity and outbox message are stored together atomically
 db, _ := sql.Open("pgx", "postgres://user:password@localhost:5432/outbox?sslmode=disable")
 
 // Create a DBContext and Writer instance
-dbCtx := outbox.NewDBContext(outbox.NewDB(db), outbox.SQLDialectPostgres)
+dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
 writer := outbox.NewWriter(dbCtx)
 
 // In your business logic:
@@ -159,7 +159,7 @@ The library supports multiple relational databases. Configure the appropriate `S
 
 ```go
 // Example creating a DBContext with MySQL dialect
-dbCtx := outbox.NewDBContext(outbox.NewDB(db), outbox.SQLDialectMySQL)
+dbCtx := outbox.NewDBContext(db, outbox.SQLDialectMySQL)
 ```
 
 #### 2. Create the Outbox Table

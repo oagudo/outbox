@@ -111,7 +111,7 @@ func main() {
 	}
 
 	// Outbox setup
-	dbCtx := outbox.NewDBContext(outbox.NewDB(db), outbox.SQLDialectMySQL)
+	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectMySQL)
 	writer := outbox.NewWriter(dbCtx)
 	reader := outbox.NewReader(dbCtx, &messagePublisher{
 		conn:    conn,

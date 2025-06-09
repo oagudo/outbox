@@ -51,8 +51,14 @@ type DBContext struct {
 	dialect SQLDialect
 }
 
-// NewDBContext creates a new DBContext.
-func NewDBContext(db DB, dialect SQLDialect) *DBContext {
+// NewDBContext creates a new DBContext from a standard *sql.DB.
+func NewDBContext(db *sql.DB, dialect SQLDialect) *DBContext {
+	return NewDBContextWithDB(&dbAdapter{DB: db}, dialect)
+}
+
+// NewDBContextWithDB creates a new DBContext with a custom DB implementation.
+// This is useful for users who want to provide their own database abstraction or for testing.
+func NewDBContextWithDB(db DB, dialect SQLDialect) *DBContext {
 	return &DBContext{
 		db:      db,
 		dialect: dialect,
@@ -102,4 +108,46 @@ func (c *DBContext) getCurrentTimestampInUTC() string {
 	default:
 		return "CURRENT_TIMESTAMP"
 	}
+}
+
+// txAdapter is a wrapper around a sql.Tx that implements the Tx interface.
+type txAdapter struct {
+	tx *sql.Tx
+}
+
+func (a *txAdapter) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	return a.tx.ExecContext(ctx, query, args...)
+}
+
+func (a *txAdapter) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	return a.tx.QueryContext(ctx, query, args...)
+}
+
+func (a *txAdapter) Commit() error {
+	return a.tx.Commit()
+}
+
+func (a *txAdapter) Rollback() error {
+	return a.tx.Rollback()
+}
+
+// dbAdapter is a wrapper around a sql.DB that implements the DB interface.
+type dbAdapter struct {
+	DB *sql.DB
+}
+
+func (a *dbAdapter) BeginTx(ctx context.Context, opts *sql.TxOptions) (Tx, error) {
+	tx, err := a.DB.BeginTx(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	return &txAdapter{tx}, nil
+}
+
+func (a *dbAdapter) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	return a.DB.ExecContext(ctx, query, args...)
+}
+
+func (a *dbAdapter) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	return a.DB.QueryContext(ctx, query, args...)
 }
