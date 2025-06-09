@@ -182,7 +182,7 @@ func TestShouldTimeoutWhenDeletingMessagesAtTheEndOfBatchTakesTooLong(t *testing
 	dbCtx := setupTest(t)
 
 	firstMsg := createMessageFixture()
-	secondMsg := createMessageFixture()
+	secondMsg := createMessageFixture(outbox.WithCreatedAt(firstMsg.CreatedAt.Add(1 * time.Second)))
 	writeMessages(t, []*outbox.Message{firstMsg, secondMsg})
 
 	r := outbox.NewReader(dbCtx, &fakePublisher{},
@@ -200,7 +200,7 @@ func TestShouldTimeoutWhenDeletingMessagesDuringBatchIterationTakesTooLong(t *te
 	dbCtx := setupTest(t)
 
 	firstMsg := createMessageFixture()
-	secondMsg := createMessageFixture()
+	secondMsg := createMessageFixture(outbox.WithCreatedAt(firstMsg.CreatedAt.Add(1 * time.Second)))
 	writeMessages(t, []*outbox.Message{firstMsg, secondMsg})
 
 	r := outbox.NewReader(dbCtx, &fakePublisher{},
