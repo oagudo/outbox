@@ -122,8 +122,8 @@ reader := outbox.NewReader(
     outbox.WithDeleteBatchSize(50),     // Delete batch size (default: 20)
     outbox.WithMaxAttempts(300),        // Discard after 300 attempts (default: MaxInt32)
     outbox.WithExponentialDelay(        // Delay between attempts (default: Exponential; can also use Fixed or Custom)
-        500*time.Millisecond,           // Initial delay between attempts (default: 200ms)
-        30*time.Minute),                // Maximum delay for exponential backoff (default: 1h)
+        500*time.Millisecond,           // Initial delay (default: 200ms)
+        30*time.Minute),                // Maximum delay (default: 1h)
 )
 reader.Start()
 defer reader.Stop(context.Background()) // Stop during application shutdown
