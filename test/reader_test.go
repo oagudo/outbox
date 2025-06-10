@@ -1,8 +1,10 @@
 package test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -641,78 +643,70 @@ func writeMessages(t *testing.T, msgs []*outbox.Message) {
 func waitForReadError(t *testing.T, r *outbox.Reader, expectedErr error) {
 	t.Helper()
 
-	require.Eventually(t, func() bool {
-		select {
-		case err, ok := <-r.Errors():
-			if !ok { // channel closed by Reader
-				return false
-			}
-			switch e := err.(type) {
-			case *outbox.ReadError:
-				assert.ErrorIs(t, e, expectedErr)
-			default:
-				return false
-			}
-
-			return true
+	waitForErrorWithCondition(t, r, func(err error) bool {
+		switch e := err.(type) {
+		case *outbox.ReadError:
+			return errors.Is(e, expectedErr) &&
+				strings.Contains(e.Error(), expectedErr.Error())
 		default:
 			return false
 		}
-	}, testTimeout, pollInterval)
+	})
 }
 
 func waitForDeleteError(t *testing.T, r *outbox.Reader, expectedMsgs []*outbox.Message, expectedErr error) {
 	t.Helper()
 
-	require.Eventually(t, func() bool {
-		select {
-		case err, ok := <-r.Errors():
-			if !ok { // channel closed by Reader
+	waitForErrorWithCondition(t, r, func(err error) bool {
+		switch e := err.(type) {
+		case *outbox.DeleteError:
+			if len(e.Messages) != len(expectedMsgs) {
 				return false
 			}
-			switch e := err.(type) {
-			case *outbox.DeleteError:
-				assert.ErrorIs(t, e, expectedErr)
-				assert.Equal(t, len(e.Messages), len(expectedMsgs))
-				for i, msg := range e.Messages {
-					assertMessageEqual(t, expectedMsgs[i], &msg)
+			for i, msg := range e.Messages {
+				if !areMessagesEqual(t, expectedMsgs[i], &msg) {
+					return false
 				}
-			default:
-				return false
 			}
-
-			return true
+			return errors.Is(e, expectedErr) &&
+				strings.Contains(e.Error(), expectedErr.Error())
 		default:
 			return false
 		}
-	}, testTimeout, pollInterval)
+	})
 }
 
 func waitForUpdateError(t *testing.T, r *outbox.Reader, expectedMsg *outbox.Message, expectedErr error) {
 	t.Helper()
 
-	require.Eventually(t, func() bool {
-		select {
-		case err, ok := <-r.Errors():
-			if !ok { // channel closed by Reader
-				return false
-			}
-			switch e := err.(type) {
-			case *outbox.UpdateError:
-				assert.ErrorIs(t, e, expectedErr)
-				assertMessageEqual(t, expectedMsg, &e.Message)
-			default:
-				return false
-			}
-
-			return true
+	waitForErrorWithCondition(t, r, func(err error) bool {
+		switch e := err.(type) {
+		case *outbox.UpdateError:
+			return areMessagesEqual(t, expectedMsg, &e.Message) &&
+				errors.Is(e, expectedErr) &&
+				strings.Contains(e.Error(), expectedErr.Error())
 		default:
 			return false
 		}
-	}, testTimeout, pollInterval)
+	})
 }
 
 func waitForPublishError(t *testing.T, r *outbox.Reader, expectedMsg *outbox.Message, expectedErr error) {
+	t.Helper()
+
+	waitForErrorWithCondition(t, r, func(err error) bool {
+		switch e := err.(type) {
+		case *outbox.PublishError:
+			return areMessagesEqual(t, expectedMsg, &e.Message) &&
+				errors.Is(e, expectedErr) &&
+				strings.Contains(e.Error(), expectedErr.Error())
+		default:
+			return false
+		}
+	})
+}
+
+func waitForErrorWithCondition(t *testing.T, r *outbox.Reader, condition func(e error) bool) {
 	t.Helper()
 
 	require.Eventually(t, func() bool {
@@ -721,15 +715,7 @@ func waitForPublishError(t *testing.T, r *outbox.Reader, expectedMsg *outbox.Mes
 			if !ok { // channel closed by Reader
 				return false
 			}
-			switch e := err.(type) {
-			case *outbox.PublishError:
-				assert.ErrorIs(t, e, expectedErr)
-				assertMessageEqual(t, expectedMsg, &e.Message)
-			default:
-				return false
-			}
-
-			return true
+			return condition(err)
 		default:
 			return false
 		}
@@ -751,4 +737,13 @@ func waitForReaderDiscardedMessage(t *testing.T, r *outbox.Reader, expectedMsg *
 			return false
 		}
 	}, testTimeout, pollInterval)
+}
+
+func areMessagesEqual(t *testing.T, oneMsg, otherMsg *outbox.Message) bool {
+	t.Helper()
+
+	return oneMsg.ID == otherMsg.ID &&
+		oneMsg.CreatedAt.Equal(otherMsg.CreatedAt) &&
+		bytes.Equal(oneMsg.Metadata, otherMsg.Metadata) &&
+		bytes.Equal(oneMsg.Payload, otherMsg.Payload)
 }
