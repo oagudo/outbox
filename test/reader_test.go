@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/oagudo/outbox/pkg/outbox"
+	"github.com/oagudo/outbox"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

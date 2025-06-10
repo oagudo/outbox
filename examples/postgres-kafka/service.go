@@ -13,7 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	_ "github.com/jackc/pgx/v5/stdlib"
-	"github.com/oagudo/outbox/pkg/outbox"
+	"github.com/oagudo/outbox"
 	"github.com/segmentio/kafka-go"
 )
 

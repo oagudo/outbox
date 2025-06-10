@@ -13,7 +13,7 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
-	"github.com/oagudo/outbox/pkg/outbox"
+	"github.com/oagudo/outbox"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 

@@ -26,8 +26,8 @@ test: start
 
 test-coverage: start
 	@echo "Running tests with coverage..."
-	go test -v -race ./... -covermode=atomic -cover -coverpkg=./pkg/outbox -coverprofile=unit-coverage.txt
-	cd test && go test -v -race ./... -covermode=atomic -cover -coverpkg=./../pkg/outbox -coverprofile=./../integration-coverage.txt
+	go test -v -race ./... -covermode=atomic -cover -coverpkg=./ -coverprofile=unit-coverage.txt
+	cd test && go test -v -race ./... -covermode=atomic -cover -coverpkg=./../ -coverprofile=./../integration-coverage.txt
 	go install github.com/wadey/gocovmerge@latest
 	gocovmerge unit-coverage.txt integration-coverage.txt > coverage.txt
 	go tool cover -html=coverage.txt -o=coverage.html

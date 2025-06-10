@@ -13,7 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nats-io/nats.go"
-	"github.com/oagudo/outbox/pkg/outbox"
+	"github.com/oagudo/outbox"
 	_ "github.com/sijms/go-ora/v2"
 )
 

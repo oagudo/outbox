@@ -10,7 +10,7 @@ import (
 	_ "github.com/denisenkom/go-mssqldb"
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/oagudo/outbox/pkg/outbox"
+	"github.com/oagudo/outbox"
 	_ "github.com/sijms/go-ora/v2"
 	"github.com/stretchr/testify/require"
 )
