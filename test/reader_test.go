@@ -102,7 +102,7 @@ func TestReaderRetriesFailedPublishAndRetainsMessage(t *testing.T) {
 			return nil
 		},
 	}, outbox.WithInterval(readerInterval),
-		outbox.WithDelay(0))
+		outbox.WithFixedDelay(0))
 	r.Start()
 
 	waitForPublishError(t, r, failingMsg, publishErr)
@@ -319,7 +319,7 @@ func TestReaderDiscardsErrorsIfBufferIsFull(t *testing.T) {
 	},
 		outbox.WithErrorChannelSize(1),
 		outbox.WithInterval(readerInterval),
-		outbox.WithDelay(0),
+		outbox.WithFixedDelay(0),
 	)
 	r.Start()
 
@@ -347,7 +347,7 @@ func TestReaderDropsDiscardedMessagesWhenChannelIsFull(t *testing.T) {
 		outbox.WithDiscardedMessagesChannelSize(1),
 		outbox.WithMaxAttempts(1),
 		outbox.WithInterval(readerInterval),
-		outbox.WithDelay(0),
+		outbox.WithFixedDelay(0),
 	)
 	r.Start()
 
@@ -452,7 +452,7 @@ func TestReaderDiscardsMessageAfterMaxAttempts(t *testing.T) {
 		outbox.WithInterval(readerInterval),
 		outbox.WithReadBatchSize(1),
 		outbox.WithMaxAttempts(3),
-		outbox.WithDelay(0),
+		outbox.WithFixedDelay(0),
 	)
 	reader.Start()
 
@@ -487,7 +487,7 @@ func TestReaderDiscardsMessageAfterOptimisticPublishFailure(t *testing.T) {
 		outbox.WithInterval(readerInterval),
 		outbox.WithReadBatchSize(1),
 		outbox.WithMaxAttempts(1),
-		outbox.WithDelay(0),
+		outbox.WithFixedDelay(0),
 	)
 	reader.Start()
 
@@ -518,8 +518,7 @@ func TestReaderRetriesWithFixedDelay(t *testing.T) {
 			return publishErr
 		},
 	}, outbox.WithInterval(readerInterval),
-		outbox.WithDelay(anyDelay),
-		outbox.WithDelayStrategy(outbox.DelayStrategyFixed),
+		outbox.WithFixedDelay(anyDelay),
 		outbox.WithMaxAttempts(4),
 	)
 	r.Start()
@@ -555,9 +554,7 @@ func TestReaderRetriesWithExponentialDelay(t *testing.T) {
 			return publishErr
 		},
 	}, outbox.WithInterval(readerInterval),
-		outbox.WithDelayStrategy(outbox.DelayStrategyExponential),
-		outbox.WithDelay(anyDelay),
-		outbox.WithMaxDelay(anyDelay*4),
+		outbox.WithExponentialDelay(anyDelay, anyDelay*4),
 		outbox.WithMaxAttempts(5),
 	)
 	r.Start()
@@ -573,6 +570,47 @@ func TestReaderRetriesWithExponentialDelay(t *testing.T) {
 	require.GreaterOrEqual(t, scheduledTimes[2].Sub(scheduledTimes[1]), anyDelay*2)
 	require.GreaterOrEqual(t, scheduledTimes[3].Sub(scheduledTimes[2]), anyDelay*4)
 	require.GreaterOrEqual(t, scheduledTimes[4].Sub(scheduledTimes[3]), anyDelay*4) // max delay is reached
+
+	require.NoError(t, r.Stop(context.Background()))
+}
+
+func TestReaderRetriesWithCustomDelayFunc(t *testing.T) {
+	dbCtx := setupTest(t)
+
+	anyDelay := 10 * time.Millisecond
+
+	failingMsg := createMessageFixture()
+	writeMessage(t, failingMsg)
+
+	publishErr := errors.New("any error during publish")
+	var scheduledTimes []time.Time
+
+	r := outbox.NewReader(dbCtx, &fakePublisher{
+		onPublish: func(_ context.Context, msg *outbox.Message) error {
+			scheduledTimes = append(scheduledTimes, msg.ScheduledAt)
+			return publishErr
+		},
+	}, outbox.WithInterval(readerInterval),
+		outbox.WithDelay(func(attempt int) time.Duration {
+			if attempt == 0 {
+				return anyDelay
+			}
+			return anyDelay * 5
+		}),
+		outbox.WithMaxAttempts(4),
+	)
+	r.Start()
+
+	require.Eventually(t, func() bool {
+		return countMessages(t) == 0
+	}, testTimeout, pollInterval)
+
+	require.Equal(t, 4, len(scheduledTimes))
+
+	require.True(t, failingMsg.CreatedAt.Equal(scheduledTimes[0]))
+	require.GreaterOrEqual(t, scheduledTimes[1].Sub(scheduledTimes[0]), anyDelay) // first attempt
+	require.GreaterOrEqual(t, scheduledTimes[2].Sub(scheduledTimes[1]), anyDelay*5)
+	require.GreaterOrEqual(t, scheduledTimes[3].Sub(scheduledTimes[2]), anyDelay*5)
 
 	require.NoError(t, r.Stop(context.Background()))
 }

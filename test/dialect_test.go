@@ -140,7 +140,7 @@ func TestDialectSucceeds(t *testing.T) {
 				outbox.WithInterval(readerInterval),
 				outbox.WithReadBatchSize(1),
 				outbox.WithMaxAttempts(1),
-				outbox.WithDelay(0),
+				outbox.WithFixedDelay(0),
 			)
 			r.Start()
 

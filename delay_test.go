@@ -1,4 +1,4 @@
-package delay
+package outbox
 
 import (
 	"math"
@@ -26,7 +26,7 @@ func TestFixedDelay(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			delayFunc := FixedDelay(tt.delay)
+			delayFunc := Fixed(tt.delay)
 
 			for _, attempt := range tt.attempts {
 				result := delayFunc(attempt)
@@ -84,7 +84,7 @@ func TestExponentialDelay(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			delayFunc := ExponentialDelay(tt.delay, tt.maxDelay)
+			delayFunc := Exponential(tt.delay, tt.maxDelay)
 
 			for _, tc := range tt.cases {
 				result := delayFunc(tc.attempt)
@@ -123,7 +123,7 @@ func TestExponentialDelayOverflow(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			delayFunc := ExponentialDelay(tt.delay, tt.maxDelay)
+			delayFunc := Exponential(tt.delay, tt.maxDelay)
 
 			result := delayFunc(tt.attempt)
 

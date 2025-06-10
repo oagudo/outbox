@@ -115,16 +115,15 @@ func (p *messagePublisher) Publish(ctx context.Context, msg *outbox.Message) err
 
 // Create and start the reader
 reader := outbox.NewReader(
-    dbCtx,                                  // Database context
-    &messagePublisher{},                    // Publisher implementation
-    outbox.WithInterval(5*time.Second),     // Polling interval (default: 10s)
-    outbox.WithReadBatchSize(200),          // Read batch size (default: 100)
-    outbox.WithDeleteBatchSize(50),         // Delete batch size (default: 20)
-    outbox.WithMaxAttempts(300),            // Discard after 300 attempts (default: MaxInt32)
-    outbox.WithDelayStrategy(
-        outbox.DelayStrategyExponential),   // Retry/backoff strategy (default: Exponential; can also use Fixed)
-    outbox.WithDelay(500*time.Millisecond), // Initial delay between attempts (default: 200ms)
-    outbox.WithMaxDelay(30*time.Minute),    // Maximum delay for exponential backoff (default: 1h)
+    dbCtx,                              // Database context
+    &messagePublisher{},                // Publisher implementation
+    outbox.WithInterval(5*time.Second), // Polling interval (default: 10s)
+    outbox.WithReadBatchSize(200),      // Read batch size (default: 100)
+    outbox.WithDeleteBatchSize(50),     // Delete batch size (default: 20)
+    outbox.WithMaxAttempts(300),        // Discard after 300 attempts (default: MaxInt32)
+    outbox.WithExponentialDelay(        // Delay between attempts (default: Exponential; can also use Fixed or Custom)
+        500*time.Millisecond,           // Initial delay between attempts (default: 200ms)
+        30*time.Minute),                // Maximum delay for exponential backoff (default: 1h)
 )
 reader.Start()
 defer reader.Stop(context.Background()) // Stop during application shutdown
