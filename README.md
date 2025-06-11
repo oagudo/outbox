@@ -19,7 +19,7 @@ Lightweight library for the [transactional outbox pattern](https://microservices
 - **Message Broker Agnostic:** Integrates easily with popular brokers like Kafka, NATS, RabbitMQ and others.
 - **Optimistic Publishing:** Optional immediate async message publishing after transaction commit for reduced latency, with guaranteed delivery fallback.
 - **Configurable Retry & Backoff Policies:** Fixed, exponential or custom backoff strategies when delivery fails.
-- **Max Attempts Safeguard:** Automatically discards messages that exceed a configurable `maxAttempts` threshold.
+- **Max Attempts Safeguard:** Automatically discards poison messages that exceed a configurable `maxAttempts` threshold.
 - **Observability:** Exposes channels for processing errors and discarded messages, making it easy to integrate with your metrics and alerting systems.
 - **Easy integration:** Designed for easy integration into your own projects.
 
