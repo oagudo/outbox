@@ -93,7 +93,7 @@ writer := outbox.NewWriter(dbCtx, outbox.WithOptimisticPublisher(publisher))
 
 **Important considerations:**
 - Publishing happens asynchronously after transaction commit
-- Message consumers must be idempotent as messages could be published twice - by the optimistic publisher and the reader (Note: consumer idempotency is a good practice regardless of optimistic publishing, though some brokers also provide deduplication features)
+- Message consumers must be idempotent as messages could be published twice - by the optimistic publisher and by the reader (Note: consumer idempotency is a good practice regardless of optimistic publishing, though some brokers also provide deduplication features)
 - Publishing failures don't affect your transactions - they don't cause `Write()` to fail
 
 </details>
@@ -317,16 +317,14 @@ curl -X POST http://localhost:8080/entity
 
 When running multiple instances of your service, each with its own reader, be aware that:
 
-- Multiple readers will independently poll for messages
-- This can result in duplicate message publishing
-- To handle this, you can either:
+- Multiple readers will independently retrieve messages. This can result in messages published more than once. To handle this you can either:
   1. Ensure your consumers are idempotent and accept duplicates
-  2. Use broker-side deduplication if available (e.g. NATS JetStream's Msg-Id)
+  2. Use broker deduplication features if available (e.g. NATS JetStream's Msg-Id)
   3. Run the reader in a single instance only (e.g. single replica deployment in k8s with reader)
 
 The optimistic publisher feature can significantly reduce the number of duplicates. With optimistic publisher messages are delivered as soon as they are committed, so readers will usually see no messages in the outbox table.
 
-**Note** that even in single instance deployments, message duplicates can still occur (e.g. if the service crashes right after successfully publishing to the broker). However, these duplicates are less frequent compared to multi instance deployments.
+Also note that even in single instance deployments, message duplicates can still occur (e.g. if the service crashes right after successfully publishing to the broker). However, these duplicates are less frequent than when you are running multiple reader instances.
 
 ## Contributing
 
