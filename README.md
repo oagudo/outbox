@@ -14,9 +14,9 @@ Lightweight library for the [transactional outbox pattern](https://microservices
 
 ## Key Features
 
-- **Minimal External Dependencies:** Adds only one external dependency [google/uuid](https://github.com/google/uuid)
+- **Lightweight:** Adds only one external dependency: [google/uuid](https://github.com/google/uuid)
 - **Database Agnostic:** Designed to work with PostgreSQL, MySQL, Oracle and other relational databases.
-- **Message Broker Agnostic:** Integrates easily with popular brokers like Kafka, NATS, RabbitMQ and others.
+- **Message Broker Agnostic:** Integrates easily with any message broker or external system.
 - **Optimistic Publishing:** Optional immediate async message publishing after transaction commit for reduced latency, with guaranteed delivery fallback.
 - **Configurable Retry & Backoff Policies:** Fixed, exponential or custom backoff strategies when delivery fails.
 - **Max Attempts Safeguard:** Automatically discards poison messages that exceed a configurable `maxAttempts` threshold.
