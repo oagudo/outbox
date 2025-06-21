@@ -326,6 +326,23 @@ The optimistic publisher feature can significantly reduce the number of duplicat
 
 Also note that even in single instance deployments, message duplicates can still occur (e.g. if the service crashes right after successfully publishing to the broker). However, these duplicates are less frequent than when you are running multiple reader instances.
 
+### How to instantiate a `DBContext` when using `pgxpool` ?
+
+You can use `stdlib.OpenDBFromPool` [function](https://pkg.go.dev/github.com/jackc/pgx/v5/stdlib#OpenDBFromPool) to get a `*sql.DB` from a `*pgxpool.Pool`.
+
+```go
+import (
+    "github.com/jackc/pgx/v5/pgxpool"
+    "github.com/jackc/pgx/v5/stdlib"
+    "github.com/oagudo/outbox"
+)
+
+// ...
+pool, _ := pgxpool.New(context.Background(), os.Getenv("DATABASE_URL"))
+db := stdlib.OpenDBFromPool(pool)
+dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
+```
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
