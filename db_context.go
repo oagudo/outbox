@@ -110,6 +110,30 @@ func (c *DBContext) getCurrentTimestampInUTC() string {
 	}
 }
 
+func (c *DBContext) buildSelectMessagesQuery() string {
+	limitPlaceholder := c.getSQLPlaceholder(1)
+
+	switch c.dialect {
+	case SQLDialectOracle:
+		return fmt.Sprintf(`SELECT id, payload, created_at, scheduled_at, metadata, times_attempted 
+			FROM outbox
+			WHERE scheduled_at <= %s
+			ORDER BY created_at ASC FETCH FIRST %s ROWS ONLY`, c.getCurrentTimestampInUTC(), limitPlaceholder)
+
+	case SQLDialectSQLServer:
+		return fmt.Sprintf(`SELECT TOP (%s) id, payload, created_at, scheduled_at, metadata, times_attempted 
+			FROM outbox
+			WHERE scheduled_at <= %s
+			ORDER BY created_at ASC`, limitPlaceholder, c.getCurrentTimestampInUTC())
+
+	default:
+		return fmt.Sprintf(`SELECT id, payload, created_at, scheduled_at, metadata, times_attempted 
+			FROM outbox
+			WHERE scheduled_at <= %s
+			ORDER BY created_at ASC LIMIT %s`, c.getCurrentTimestampInUTC(), limitPlaceholder)
+	}
+}
+
 // txAdapter is a wrapper around a sql.Tx that implements the Tx interface.
 type txAdapter struct {
 	tx *sql.Tx

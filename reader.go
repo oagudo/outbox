@@ -538,7 +538,7 @@ func (r *Reader) readOutboxMessages() ([]*Message, error) {
 	defer cancel()
 
 	// nolint:gosec
-	query := r.buildSelectMessagesQuery()
+	query := r.dbCtx.buildSelectMessagesQuery()
 	rows, err := r.dbCtx.db.QueryContext(ctx, query, r.maxMessages)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query outbox messages: %w", err)
@@ -559,28 +559,4 @@ func (r *Reader) readOutboxMessages() ([]*Message, error) {
 		return nil, fmt.Errorf("unexpected error while scanning outbox messages: %w", err)
 	}
 	return messages, nil
-}
-
-func (r *Reader) buildSelectMessagesQuery() string {
-	limitPlaceholder := r.dbCtx.getSQLPlaceholder(1)
-
-	switch r.dbCtx.dialect {
-	case SQLDialectOracle:
-		return fmt.Sprintf(`SELECT id, payload, created_at, scheduled_at, metadata, times_attempted 
-			FROM outbox 
-			WHERE scheduled_at <= %s 
-			ORDER BY created_at ASC FETCH FIRST %s ROWS ONLY`, r.dbCtx.getCurrentTimestampInUTC(), limitPlaceholder)
-
-	case SQLDialectSQLServer:
-		return fmt.Sprintf(`SELECT TOP (%s) id, payload, created_at, scheduled_at, metadata, times_attempted 
-			FROM outbox 
-			WHERE scheduled_at <= %s 
-			ORDER BY created_at ASC`, limitPlaceholder, r.dbCtx.getCurrentTimestampInUTC())
-
-	default:
-		return fmt.Sprintf(`SELECT id, payload, created_at, scheduled_at, metadata, times_attempted 
-			FROM outbox 
-			WHERE scheduled_at <= %s
-			ORDER BY created_at ASC LIMIT %s`, r.dbCtx.getCurrentTimestampInUTC(), limitPlaceholder)
-	}
 }
