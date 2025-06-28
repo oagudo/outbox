@@ -453,12 +453,12 @@ func (r *Reader) flushIfFull(msgsToDelete []*Message) bool {
 		return false
 	}
 	err := r.deleteMessages(msgsToDelete)
-	if err == nil {
-		return true
+	if err != nil {
+		r.sendError(&DeleteError{Messages: copyMessages(msgsToDelete), Err: err})
+		return false
 	}
 
-	r.sendError(&DeleteError{Messages: copyMessages(msgsToDelete), Err: err})
-	return false
+	return true
 }
 
 func (r *Reader) handleMessage(msg *Message) bool {
@@ -473,18 +473,17 @@ func (r *Reader) handleMessage(msg *Message) bool {
 	}
 
 	err := r.publishMessage(msg)
-	if err == nil {
-		return true
-	}
-
-	r.sendError(&PublishError{Message: *msg, Err: err})
-
-	err = r.scheduleNextAttempt(msg)
 	if err != nil {
-		r.sendError(&UpdateError{Message: *msg, Err: err})
+		r.sendError(&PublishError{Message: *msg, Err: err})
+
+		err = r.scheduleNextAttempt(msg)
+		if err != nil {
+			r.sendError(&UpdateError{Message: *msg, Err: err})
+		}
+		return false
 	}
 
-	return false
+	return true
 }
 
 func (r *Reader) scheduleNextAttempt(msg *Message) error {
@@ -530,11 +529,8 @@ func (r *Reader) deleteMessages(msgsToDelete []*Message) error {
 	// nolint:gosec
 	query := fmt.Sprintf("DELETE FROM outbox WHERE id IN (%s)", strings.Join(placeholders, ", "))
 	_, err := r.dbCtx.db.ExecContext(ctx, query, ids...)
-	if err != nil {
-		return err
-	}
 
-	return nil
+	return err
 }
 
 func (r *Reader) readOutboxMessages() ([]*Message, error) {
