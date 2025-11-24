@@ -112,6 +112,46 @@ func (w *Writer) Write(ctx context.Context, msg *Message, txWorkFunc TxWorkFunc)
 	return nil
 }
 
+func (w *Writer) WriteWithTX(ctx context.Context, tx Tx, msg *Message, txWorkFunc TxWorkFunc) error {
+	var txCommitted bool
+	defer func() {
+		if !txCommitted {
+			_ = tx.Rollback()
+		}
+	}()
+
+	err := txWorkFunc(ctx, tx)
+	if err != nil {
+		return fmt.Errorf("failed to execute user-defined query: %w", err)
+	}
+
+	query := fmt.Sprintf("INSERT INTO outbox (id, created_at, scheduled_at, metadata, payload, times_attempted) VALUES (%s, %s, %s, %s, %s, %s)",
+		w.dbCtx.getSQLPlaceholder(1),
+		w.dbCtx.getSQLPlaceholder(2),
+		w.dbCtx.getSQLPlaceholder(3),
+		w.dbCtx.getSQLPlaceholder(4),
+		w.dbCtx.getSQLPlaceholder(5),
+		w.dbCtx.getSQLPlaceholder(6))
+	_, err = tx.ExecContext(ctx, query, w.dbCtx.formatMessageIDForDB(msg), msg.CreatedAt, msg.ScheduledAt, msg.Metadata, msg.Payload, 0)
+	if err != nil {
+		return fmt.Errorf("failed to store message in outbox: %w", err)
+	}
+
+	err = tx.Commit()
+	txCommitted = err == nil
+
+	if txCommitted && w.msgPublisher != nil {
+		ctxWithoutCancel := context.WithoutCancel(ctx) // optimistic path is async, so we don't want to cancel the context
+		go w.publishMessage(ctxWithoutCancel, msg)
+	}
+
+	if err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}
+
 func (w *Writer) publishMessage(ctx context.Context, msg *Message) {
 	ctx, cancel := context.WithTimeout(ctx, w.optimisticTimeout)
 	defer cancel()
