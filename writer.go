@@ -20,6 +20,7 @@ type Writer struct {
 // that executes user-defined queries within the transaction that stores a message in the outbox.
 // The Writer itself commits or rolls back the transaction once the callback and the outbox insert complete.
 type TxWorkFunc func(ctx context.Context, txQueryer TxQueryer) error
+type TxWorkFuncV2 func(ctx context.Context, txQueryer TxQueryer) (*Message, error)
 
 // WriterOption is a function that configures a Writer instance.
 type WriterOption func(*Writer)
@@ -94,7 +95,26 @@ func (w *Writer) WriteWithTX(ctx context.Context, tx Tx, msg *Message, txWorkFun
 	if err != nil {
 		return fmt.Errorf("failed to execute user-defined query: %w", err)
 	}
+	return w.write(ctx, tx, msg)
+}
 
+func (w *Writer) WriteWithTXV2(ctx context.Context, tx Tx, txWorkFunc TxWorkFuncV2) error {
+	var txCommitted bool
+	defer func() {
+		if !txCommitted {
+			_ = tx.Rollback()
+		}
+	}()
+
+	msg, err := txWorkFunc(ctx, tx)
+	if err != nil {
+		return fmt.Errorf("failed to execute user-defined query: %w", err)
+	}
+
+	return w.write(ctx, tx, msg)
+}
+
+func (w *Writer) write(ctx context.Context, tx Tx, msg *Message) (err error) {
 	query := fmt.Sprintf("INSERT INTO outbox (id, created_at, scheduled_at, metadata, payload, times_attempted) VALUES (%s, %s, %s, %s, %s, %s)",
 		w.dbCtx.getSQLPlaceholder(1),
 		w.dbCtx.getSQLPlaceholder(2),
@@ -108,7 +128,7 @@ func (w *Writer) WriteWithTX(ctx context.Context, tx Tx, msg *Message, txWorkFun
 	}
 
 	err = tx.Commit()
-	txCommitted = err == nil
+	txCommitted := err == nil
 
 	if txCommitted && w.msgPublisher != nil {
 		ctxWithoutCancel := context.WithoutCancel(ctx) // optimistic path is async, so we don't want to cancel the context
@@ -118,7 +138,6 @@ func (w *Writer) WriteWithTX(ctx context.Context, tx Tx, msg *Message, txWorkFun
 	if err != nil {
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
-
 	return nil
 }
 
