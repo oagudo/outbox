@@ -79,8 +79,18 @@ func (w *Writer) Write(ctx context.Context, msg *Message, txWorkFunc TxWorkFunc)
 			_ = tx.Rollback()
 		}
 	}()
+	return w.WriteWithTX(ctx, tx, msg, txWorkFunc)
+}
 
-	err = txWorkFunc(ctx, tx)
+func (w *Writer) WriteWithTX(ctx context.Context, tx Tx, msg *Message, txWorkFunc TxWorkFunc) error {
+	var txCommitted bool
+	defer func() {
+		if !txCommitted {
+			_ = tx.Rollback()
+		}
+	}()
+
+	err := txWorkFunc(ctx, tx)
 	if err != nil {
 		return fmt.Errorf("failed to execute user-defined query: %w", err)
 	}
