@@ -139,6 +139,10 @@ type txAdapter struct {
 	tx *sql.Tx
 }
 
+func NewTxAdapter(tx *sql.Tx) *txAdapter {
+	return &txAdapter{tx}
+}
+
 func (a *txAdapter) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	return a.tx.ExecContext(ctx, query, args...)
 }
@@ -165,7 +169,7 @@ func (a *dbAdapter) BeginTx(ctx context.Context, opts *sql.TxOptions) (Tx, error
 	if err != nil {
 		return nil, err
 	}
-	return &txAdapter{tx}, nil
+	return NewTxAdapter(tx), nil
 }
 
 func (a *dbAdapter) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
