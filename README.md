@@ -71,9 +71,8 @@ unmanagedWriter := writer.Unmanaged()
 tx, _ := db.BeginTx(ctx, nil)
 defer tx.Rollback()
 
+err = unmanagedWriter.Store(ctx, tx, msg)
 _, _ = tx.ExecContext(ctx, "INSERT INTO entity (...) VALUES (...)", ...)
-err = unmanagedWriter.Store(ctx, tx, msg1)
-err = unmanagedWriter.Store(ctx, tx, msg2)
 
 tx.Commit()
 ```
