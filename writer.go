@@ -10,10 +10,23 @@ import (
 // It optionally supports optimistic publishing, which attempts to publish messages
 // immediately after transaction commit.
 type Writer struct {
-	dbCtx        *DBContext
-	msgPublisher MessagePublisher
+	dbCtx           *DBContext
+	msgPublisher    MessagePublisher
+	unmanagedWriter *UnmanagedWriter
 
 	optimisticTimeout time.Duration
+}
+
+// UnmanagedWriter provides low-level access to outbox table persistence
+//
+// Unlike Writer, UnmanagedWriter does not start, commit, or rollback
+// transactions, nor does support optimistic publishing.
+// It is intended for users who want to manage the transaction lifecycle
+// themselves and only need to persist outbox messages.
+//
+// An UnmanagedWriter must be obtained via Writer.Unmanaged() function.
+type UnmanagedWriter struct {
+	dbCtx *DBContext
 }
 
 // TxWorkFunc is user-supplied callback that accepts a TxQueryer parameter
@@ -51,6 +64,7 @@ func WithOptimisticTimeout(timeout time.Duration) WriterOption {
 func NewWriter(dbCtx *DBContext, opts ...WriterOption) *Writer {
 	w := &Writer{
 		dbCtx:             dbCtx,
+		unmanagedWriter:   &UnmanagedWriter{dbCtx: dbCtx},
 		optimisticTimeout: 10 * time.Second,
 	}
 
@@ -85,16 +99,9 @@ func (w *Writer) Write(ctx context.Context, msg *Message, txWorkFunc TxWorkFunc)
 		return fmt.Errorf("failed to execute user-defined query: %w", err)
 	}
 
-	query := fmt.Sprintf("INSERT INTO outbox (id, created_at, scheduled_at, metadata, payload, times_attempted) VALUES (%s, %s, %s, %s, %s, %s)",
-		w.dbCtx.getSQLPlaceholder(1),
-		w.dbCtx.getSQLPlaceholder(2),
-		w.dbCtx.getSQLPlaceholder(3),
-		w.dbCtx.getSQLPlaceholder(4),
-		w.dbCtx.getSQLPlaceholder(5),
-		w.dbCtx.getSQLPlaceholder(6))
-	_, err = tx.ExecContext(ctx, query, w.dbCtx.formatMessageIDForDB(msg), msg.CreatedAt, msg.ScheduledAt, msg.Metadata, msg.Payload, 0)
+	err = insertOutboxMessage(ctx, w.dbCtx, tx, msg)
 	if err != nil {
-		return fmt.Errorf("failed to store message in outbox: %w", err)
+		return err
 	}
 
 	err = tx.Commit()
@@ -112,6 +119,26 @@ func (w *Writer) Write(ctx context.Context, msg *Message, txWorkFunc TxWorkFunc)
 	return nil
 }
 
+// Unmanaged returns an UnmanagedWriter that does not manage the transaction lifecycle.
+// Useful for users who want to manage the transaction lifecycle themselves.
+// Messages stored via Unmanaged are eventually published by the Reader but not by the optimistic publisher (if configured in Writer).
+//
+// Use Writer.Write for managed transaction lifecycle and optimistic publishing.
+func (w *Writer) Unmanaged() *UnmanagedWriter {
+	return w.unmanagedWriter
+}
+
+// Store persists a message into the outbox table using a user managed transaction.
+//
+// Store only writes the message if the provided transaction is committed successfully. It does not:
+//   - manage the transaction lifecycle, it is the responsibility of the user to commit or rollback the transaction
+//   - trigger optimistic publishing (if configured in Writer)
+//
+// Use Writer.Write for managed transaction lifecycle and optimistic publishing.
+func (w *UnmanagedWriter) Store(ctx context.Context, tx TxQueryer, msg *Message) error {
+	return insertOutboxMessage(ctx, w.dbCtx, tx, msg)
+}
+
 func (w *Writer) publishMessage(ctx context.Context, msg *Message) {
 	ctx, cancel := context.WithTimeout(ctx, w.optimisticTimeout)
 	defer cancel()
@@ -121,4 +148,19 @@ func (w *Writer) publishMessage(ctx context.Context, msg *Message) {
 		query := fmt.Sprintf("DELETE FROM outbox WHERE id = %s", w.dbCtx.getSQLPlaceholder(1))
 		_, _ = w.dbCtx.db.ExecContext(ctx, query, w.dbCtx.formatMessageIDForDB(msg))
 	}
+}
+
+func insertOutboxMessage(ctx context.Context, dbCtx *DBContext, tx TxQueryer, msg *Message) error {
+	query := fmt.Sprintf("INSERT INTO outbox (id, created_at, scheduled_at, metadata, payload, times_attempted) VALUES (%s, %s, %s, %s, %s, %s)",
+		dbCtx.getSQLPlaceholder(1),
+		dbCtx.getSQLPlaceholder(2),
+		dbCtx.getSQLPlaceholder(3),
+		dbCtx.getSQLPlaceholder(4),
+		dbCtx.getSQLPlaceholder(5),
+		dbCtx.getSQLPlaceholder(6))
+	_, err := tx.ExecContext(ctx, query, dbCtx.formatMessageIDForDB(msg), msg.CreatedAt, msg.ScheduledAt, msg.Metadata, msg.Payload, 0)
+	if err != nil {
+		return fmt.Errorf("failed to store message in outbox: %w", err)
+	}
+	return nil
 }

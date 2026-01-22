@@ -35,31 +35,26 @@ The library consists of two main components:
 The Writer ensures your entity and outbox message are stored together atomically:
 
 ```go
-// Setup database connection
-db, _ := sql.Open("pgx", "postgres://user:password@localhost:5432/outbox?sslmode=disable")
-
-// Create a DBContext and Writer instance
+// Initialise Writer
+db, _ := sql.Open("pgx", "postgres://...")
 dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
 writer := outbox.NewWriter(dbCtx)
 
-// In your business logic:
-//
-// Create your entity and outbox message
-entity := Entity{
-    ID:        uuid.New(),
-    CreatedAt: time.Now().UTC(),
-}
-
+// Create an outbox message representing the business event
 payload, _ := json.Marshal(entity)
 metadata := json.RawMessage(`{"trace_id":"abc123","correlation_id":"xyz789"}`)
 msg := outbox.NewMessage(payload,
     outbox.WithCreatedAt(entity.CreatedAt),
     outbox.WithMetadata(metadata))
 
-// Write message and entity in a single transaction
+// Use Writer
+
+// --- Option 1: Library-managed transactions (recommended) ---
+//
+// Write executes your callback queries and inserts the outbox message in a single transaction.
+// If either fails, everything is rolled back.
 err = writer.Write(ctx, msg,
-    // This user-defined callback executes queries within the
-    // same transaction that stores the outbox message
+    // user provided callback
     func(ctx context.Context, txQueryer outbox.TxQueryer) error {
         _, err := txQueryer.ExecContext(ctx,
             "INSERT INTO entity (id, created_at) VALUES ($1, $2)",
@@ -67,6 +62,20 @@ err = writer.Write(ctx, msg,
         )
         return err
     })
+
+// --- Option 2: User-managed transactions ---
+//
+// Intended for users who want to manage the transaction lifecycle themselves
+// and only need to persist outbox messages.
+unmanagedWriter := writer.Unmanaged()
+tx, _ := db.BeginTx(ctx, nil)
+defer tx.Rollback()
+
+_, _ = tx.ExecContext(ctx, "INSERT INTO entity (...) VALUES (...)", ...)
+err = unmanagedWriter.Store(ctx, tx, msg1)
+err = unmanagedWriter.Store(ctx, tx, msg2)
+
+tx.Commit()
 ```
 
 <details>
@@ -95,6 +104,7 @@ writer := outbox.NewWriter(dbCtx, outbox.WithOptimisticPublisher(publisher))
 - Publishing happens asynchronously after transaction commit
 - Message consumers must be idempotent as messages could be published twice - by the optimistic publisher and by the reader (Note: consumer idempotency is a good practice regardless of optimistic publishing, though some brokers also provide deduplication features)
 - Publishing failures don't affect your transactions - they don't cause `Write()` to fail
+- Optimistic publisher is not triggered for user managed transactions - `Writer.Unmanaged()`.
 
 </details>
 
