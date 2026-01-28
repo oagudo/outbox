@@ -165,7 +165,7 @@ func WithDeleteBatchSize(size int) ReaderOption {
 // WithExponentialDelay	sets the delay between attempts to publish a message to be exponential.
 // The delay is 2^n where n is the current attempt number.
 //
-// For example, with initialDelay of 200 miliseconds and maxDelay of 1 hour:
+// For example, with initialDelay of 200 milliseconds and maxDelay of 1 hour:
 //
 // Delay after attempt 0: 200ms
 // Delay after attempt 1: 400ms
@@ -419,6 +419,7 @@ func (r *Reader) publishMessages() {
 	msgs, err := r.readOutboxMessages()
 	if err != nil {
 		r.sendError(&ReadError{Err: err})
+		return
 	}
 
 	msgsToDelete := make([]*Message, 0, r.deleteBatchSize)

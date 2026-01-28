@@ -27,6 +27,10 @@ func (f *fakeDB) QueryContext(_ context.Context, _ string, _ ...any) (*sql.Rows,
 	return nil, nil
 }
 
+func (f *fakeDB) QueryRowContext(_ context.Context, _ string, _ ...any) *sql.Row {
+	return nil
+}
+
 type fakeTx struct {
 	execErr     error
 	commitErr   error
@@ -44,6 +48,10 @@ func (f *fakeTx) ExecContext(_ context.Context, _ string, _ ...any) (sql.Result,
 
 func (f *fakeTx) QueryContext(_ context.Context, _ string, _ ...any) (*sql.Rows, error) {
 	return nil, nil
+}
+
+func (f *fakeTx) QueryRowContext(_ context.Context, _ string, _ ...any) *sql.Row {
+	return nil
 }
 
 func (f *fakeTx) Commit() error {

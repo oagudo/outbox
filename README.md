@@ -42,7 +42,8 @@ writer := outbox.NewWriter(dbCtx)
 
 // --- Option 1: Library-managed transactions (recommended) ---
 //
-// Write executes user defined queries and store zero, one, or multiple messages atomically.
+// Write executes user defined queries and store messages atomically in a single transaction.
+// If either fails, everything is rolled back.
 err = writer.Write(ctx, func(ctx context.Context, tx outbox.TxQueryer, msgWriter outbox.MessageWriter) error {
     // Perform business logic
     result, err := tx.ExecContext(ctx,
@@ -56,7 +57,7 @@ err = writer.Write(ctx, func(ctx context.Context, tx outbox.TxQueryer, msgWriter
         return ErrInsufficientInventory // no message emitted, transaction rolled back
     }
 
-    // Create and store outbox message
+    // Create and store outbox messages
     payload, _ := json.Marshal(order)
     msg := outbox.NewMessage(payload,
         outbox.WithCreatedAt(order.CreatedAt),
@@ -65,7 +66,7 @@ err = writer.Write(ctx, func(ctx context.Context, tx outbox.TxQueryer, msgWriter
     return msgWriter.Store(ctx, msg)
 })
 
-// For simple cases that store a single message, use WriteOne
+// For simple cases that store a single message unconditionally, use WriteOne
 err = writer.WriteOne(ctx, msg, func(ctx context.Context, tx outbox.TxQueryer) error {
     _, err := tx.ExecContext(ctx,
         "INSERT INTO entity (id, created_at) VALUES ($1, $2)",

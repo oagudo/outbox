@@ -87,20 +87,13 @@ func TestWrite(t *testing.T) {
 
 		// Should not store message because entity already exists
 		err = w.Write(context.Background(), func(ctx context.Context, tx outbox.TxQueryer, msgWriter outbox.MessageWriter) error {
-			rows, err := tx.QueryContext(ctx, "SELECT id FROM entity WHERE id = $1", existingEntity.ID)
-			if err != nil {
-				return err
-			}
-			defer func() {
-				_ = rows.Close()
-			}()
-
-			entityExists := rows.Next()
-			if !entityExists {
+			var id uuid.UUID
+			err := tx.QueryRowContext(ctx, "SELECT id FROM entity WHERE id = $1", existingEntity.ID).Scan(&id)
+			if errors.Is(err, sql.ErrNoRows) {
 				// Only store message if entity doesn't exist
 				return msgWriter.Store(ctx, anyMsg)
 			}
-			return nil
+			return err
 		})
 		require.NoError(t, err)
 

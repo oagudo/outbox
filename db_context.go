@@ -28,6 +28,7 @@ type Queryer interface {
 // TxQueryer represents a query executor inside a transaction.
 type TxQueryer interface {
 	Queryer
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
 // Tx represents a database transaction.
@@ -145,6 +146,10 @@ func (a *txAdapter) ExecContext(ctx context.Context, query string, args ...any) 
 
 func (a *txAdapter) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	return a.tx.QueryContext(ctx, query, args...)
+}
+
+func (a *txAdapter) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+	return a.tx.QueryRowContext(ctx, query, args...)
 }
 
 func (a *txAdapter) Commit() error {
