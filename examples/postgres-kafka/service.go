@@ -120,8 +120,8 @@ func main() {
 			return
 		}
 		msg := outbox.NewMessage(entityAsJSON, outbox.WithCreatedAt(entity.CreatedAt), outbox.WithMetadata(msgMetadataAsJSON))
-		err = writer.Write(r.Context(), msg, func(ctx context.Context, txQueryer outbox.TxQueryer) error {
-			_, err := txQueryer.ExecContext(ctx,
+		err = writer.WriteOne(r.Context(), msg, func(ctx context.Context, tx outbox.TxQueryer) error {
+			_, err := tx.ExecContext(ctx,
 				"INSERT INTO entity (id, created_at) VALUES ($1, $2)",
 				entity.ID, entity.CreatedAt,
 			)

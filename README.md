@@ -40,28 +40,38 @@ db, _ := sql.Open("pgx", "postgres://...")
 dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
 writer := outbox.NewWriter(dbCtx)
 
-// Create an outbox message representing the business event
-payload, _ := json.Marshal(entity)
-metadata := json.RawMessage(`{"trace_id":"abc123","correlation_id":"xyz789"}`)
-msg := outbox.NewMessage(payload,
-    outbox.WithCreatedAt(entity.CreatedAt),
-    outbox.WithMetadata(metadata))
-
-// Use Writer
-
 // --- Option 1: Library-managed transactions (recommended) ---
 //
-// Write executes your callback queries and inserts the outbox message in a single transaction.
-// If either fails, everything is rolled back.
-err = writer.Write(ctx, msg,
-    // user provided callback
-    func(ctx context.Context, txQueryer outbox.TxQueryer) error {
-        _, err := txQueryer.ExecContext(ctx,
-            "INSERT INTO entity (id, created_at) VALUES ($1, $2)",
-            entity.ID, entity.CreatedAt,
-        )
+// Write executes user defined queries and store zero, one, or multiple messages atomically.
+err = writer.Write(ctx, func(ctx context.Context, tx outbox.TxQueryer, msgWriter outbox.MessageWriter) error {
+    // Perform business logic
+    result, err := tx.ExecContext(ctx,
+        "UPDATE inventory SET quantity = quantity - $1 WHERE product_id = $2 AND quantity >= $1",
+        order.Quantity, order.ProductID)
+    if err != nil {
         return err
-    })
+    }
+    rows, _ := result.RowsAffected()
+    if rows == 0 {
+        return ErrInsufficientInventory // no message emitted, transaction rolled back
+    }
+
+    // Create and store outbox message
+    payload, _ := json.Marshal(order)
+    msg := outbox.NewMessage(payload,
+        outbox.WithCreatedAt(order.CreatedAt),
+        outbox.WithMetadata(json.RawMessage(`{"trace_id":"abc123"}`)))
+
+    return msgWriter.Store(ctx, msg)
+})
+
+// For simple cases that store a single message, use WriteOne
+err = writer.WriteOne(ctx, msg, func(ctx context.Context, tx outbox.TxQueryer) error {
+    _, err := tx.ExecContext(ctx,
+        "INSERT INTO entity (id, created_at) VALUES ($1, $2)",
+        entity.ID, entity.CreatedAt)
+    return err
+})
 
 // --- Option 2: User-managed transactions ---
 //
@@ -86,8 +96,8 @@ Optimistic publishing attempts to publish messages immediately after transaction
 
 1. Transaction commits (entity + outbox message stored)
 2. Immediate publish attempt to broker (asynchronously, will not block the incoming request)
-3. On success: message is removed from outbox
-4. On failure: background reader handles delivery later
+3. On success message is removed from outbox
+4. On failure background reader handles delivery later
 
 #### Configuration
 

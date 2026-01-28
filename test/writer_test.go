@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -14,126 +15,448 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type entity struct {
-	ID        uuid.UUID
-	CreatedAt time.Time
-}
-
-func TestWriterSuccessfullyWritesToOutbox(t *testing.T) {
+func TestWrite(t *testing.T) {
 	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
 	w := outbox.NewWriter(dbCtx)
+	t.Run("stores message and executes queries atomically", func(t *testing.T) {
+		anyMsg := createMessageFixture()
+		anyEntity := createEntityFixture()
 
-	anyMsg := createMessageFixture()
-	anyEntity := createEntityFixture()
-
-	err := w.Write(context.Background(), anyMsg, func(ctx context.Context, txQueryer outbox.TxQueryer) error {
-		rows, err := txQueryer.QueryContext(ctx, "SELECT id, created_at FROM entity WHERE id = $1", anyEntity.ID)
-		require.NoError(t, err)
-		defer func() {
-			_ = rows.Close()
-		}()
-		require.False(t, rows.Next())
-
-		_, err = txQueryer.ExecContext(ctx, "INSERT INTO entity (id, created_at) VALUES ($1, $2)", anyEntity.ID, anyEntity.CreatedAt)
+		err := w.Write(context.Background(), func(ctx context.Context, tx outbox.TxQueryer, msgWriter outbox.MessageWriter) error {
+			_, err := tx.ExecContext(ctx, "INSERT INTO entity (id, created_at) VALUES ($1, $2)", anyEntity.ID, anyEntity.CreatedAt)
+			if err != nil {
+				return err
+			}
+			return msgWriter.Store(ctx, anyMsg)
+		})
 		require.NoError(t, err)
 
-		return nil
+		savedMessage, found := readOutboxMessage(t, anyMsg.ID)
+		require.True(t, found)
+		assertMessageEqual(t, anyMsg, savedMessage)
+
+		savedEntity, found := readEntity(t, anyEntity.ID)
+		require.True(t, found)
+		assertEntityEqual(t, anyEntity, *savedEntity)
 	})
-	require.NoError(t, err)
 
-	savedMessage, found := readOutboxMessage(t, anyMsg.ID)
-	require.True(t, found)
-	assertMessageEqual(t, anyMsg, savedMessage)
+	t.Run("stores multiple messages in single transaction", func(t *testing.T) {
+		firstMsg := createMessageFixture()
+		secondMsg := createMessageFixture()
+		anyEntity := createEntityFixture()
 
-	savedEntity, found := readEntity(t, anyEntity.ID)
-	require.True(t, found)
-	assertEntityEqual(t, anyEntity, *savedEntity)
-}
-
-func TestWriterErrorOnTxBegin(t *testing.T) {
-	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
-	w := outbox.NewWriter(dbCtx)
-
-	anyMsg := createMessageFixture()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // force an error on tx begin
-
-	err := w.Write(ctx, anyMsg, func(_ context.Context, _ outbox.TxQueryer) error {
-		return nil
-	})
-	require.Error(t, err)
-	require.ErrorIs(t, err, context.Canceled)
-
-	_, found := readOutboxMessage(t, anyMsg.ID)
-	require.False(t, found)
-}
-
-func TestWriterRollsBackOnOutboxMessageWriteError(t *testing.T) {
-	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
-	w := outbox.NewWriter(dbCtx)
-
-	anyMsg := createMessageFixture()
-	err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxQueryer) error {
-		return nil
-	})
-	require.NoError(t, err)
-
-	anyEntity := createEntityFixture()
-	err = w.Write(context.Background(), anyMsg, func(ctx context.Context, txQueryer outbox.TxQueryer) error {
-		_, err := txQueryer.ExecContext(ctx, "INSERT INTO entity (id, created_at) VALUES ($1, $2)", anyEntity.ID, anyEntity.CreatedAt)
+		err := w.Write(context.Background(), func(ctx context.Context, tx outbox.TxQueryer, msgWriter outbox.MessageWriter) error {
+			_, err := tx.ExecContext(ctx, "INSERT INTO entity (id, created_at) VALUES ($1, $2)", anyEntity.ID, anyEntity.CreatedAt)
+			if err != nil {
+				return err
+			}
+			err = msgWriter.Store(ctx, firstMsg)
+			if err != nil {
+				return err
+			}
+			return msgWriter.Store(ctx, secondMsg)
+		})
 		require.NoError(t, err)
-		return nil
-	})
-	require.Error(t, err) // Uniqueness constraint violation when storing the outbox message
-	var pqError *pq.Error
-	require.ErrorAs(t, err, &pqError)
-	require.Equal(t, pq.ErrorCode("23505"), pqError.Code)
 
-	_, found := readEntity(t, anyEntity.ID)
-	require.False(t, found)
+		requireMessageInOutbox(t, firstMsg.ID)
+		requireMessageInOutbox(t, secondMsg.ID)
+
+		requireEntityInDB(t, anyEntity.ID)
+	})
+
+	t.Run("commits transaction with zero messages", func(t *testing.T) {
+		anyEntity := createEntityFixture()
+
+		err := w.Write(context.Background(), func(ctx context.Context, tx outbox.TxQueryer, _ outbox.MessageWriter) error {
+			_, err := tx.ExecContext(ctx, "INSERT INTO entity (id, created_at) VALUES ($1, $2)", anyEntity.ID, anyEntity.CreatedAt)
+			return err
+		})
+		require.NoError(t, err)
+
+		savedEntity, found := readEntity(t, anyEntity.ID)
+		require.True(t, found)
+		assertEntityEqual(t, anyEntity, *savedEntity)
+	})
+
+	t.Run("conditionally stores message based on query result", func(t *testing.T) {
+		existingEntity := createEntityFixture()
+		_, err := db.Exec("INSERT INTO entity (id, created_at) VALUES ($1, $2)", existingEntity.ID, existingEntity.CreatedAt)
+		require.NoError(t, err)
+
+		anyMsg := createMessageFixture()
+
+		// Should not store message because entity already exists
+		err = w.Write(context.Background(), func(ctx context.Context, tx outbox.TxQueryer, msgWriter outbox.MessageWriter) error {
+			rows, err := tx.QueryContext(ctx, "SELECT id FROM entity WHERE id = $1", existingEntity.ID)
+			if err != nil {
+				return err
+			}
+			defer func() {
+				_ = rows.Close()
+			}()
+
+			entityExists := rows.Next()
+			if !entityExists {
+				// Only store message if entity doesn't exist
+				return msgWriter.Store(ctx, anyMsg)
+			}
+			return nil
+		})
+		require.NoError(t, err)
+
+		requireMessageNotInOutbox(t, anyMsg.ID)
+	})
+
+	t.Run("rolls back on callback error", func(t *testing.T) {
+		anyMsg := createMessageFixture()
+		anyEntity := createEntityFixture()
+
+		err := w.Write(context.Background(), func(ctx context.Context, tx outbox.TxQueryer, msgWriter outbox.MessageWriter) error {
+			_, err := tx.ExecContext(ctx, "INSERT INTO entity (id, created_at) VALUES ($1, $2)", anyEntity.ID, anyEntity.CreatedAt)
+			if err != nil {
+				return err
+			}
+			err = msgWriter.Store(ctx, anyMsg)
+			if err != nil {
+				return err
+			}
+			return errors.New("any error in callback")
+		})
+		require.Error(t, err)
+
+		requireMessageNotInOutbox(t, anyMsg.ID)
+
+		requireEntityNotInDB(t, anyEntity.ID)
+	})
+
+	t.Run("rolls back on message store error", func(t *testing.T) {
+		anyMsg := createMessageFixture()
+		// Pre-insert message to cause uniqueness violation
+		err := w.Write(context.Background(), func(ctx context.Context, _ outbox.TxQueryer, msgWriter outbox.MessageWriter) error {
+			return msgWriter.Store(ctx, anyMsg)
+		})
+		require.NoError(t, err)
+
+		anyEntity := createEntityFixture()
+		err = w.Write(context.Background(), func(ctx context.Context, tx outbox.TxQueryer, msgWriter outbox.MessageWriter) error {
+			_, err := tx.ExecContext(ctx, "INSERT INTO entity (id, created_at) VALUES ($1, $2)", anyEntity.ID, anyEntity.CreatedAt)
+			if err != nil {
+				return err
+			}
+			return msgWriter.Store(ctx, anyMsg) // duplicate message ID
+		})
+		require.Error(t, err)
+
+		var pqError *pq.Error
+		require.ErrorAs(t, err, &pqError)
+		require.Equal(t, pq.ErrorCode("23505"), pqError.Code)
+
+		requireEntityNotInDB(t, anyEntity.ID)
+	})
+
+	t.Run("returns error on transaction begin failure", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel() // forces error on tx begin
+
+		err := w.Write(ctx, func(_ context.Context, _ outbox.TxQueryer, _ outbox.MessageWriter) error {
+			return nil
+		})
+		require.Error(t, err)
+		require.ErrorIs(t, err, context.Canceled)
+	})
 }
 
-func TestWriterRollsBackOnUserDefinedCallbackError(t *testing.T) {
+func TestWriteWithOptimisticPublisher(t *testing.T) {
+	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
+
+	t.Run("publishes messages and removes them from outbox on success", func(t *testing.T) {
+		var publishedCount atomic.Int32
+		publisher := &fakePublisher{
+			onPublish: func(_ context.Context, _ *outbox.Message) error {
+				publishedCount.Add(1)
+				return nil
+			},
+		}
+		w := outbox.NewWriter(dbCtx, outbox.WithOptimisticPublisher(publisher))
+
+		firstMsg := createMessageFixture()
+		secondMsg := createMessageFixture()
+
+		err := w.Write(context.Background(), func(ctx context.Context, _ outbox.TxQueryer, msgWriter outbox.MessageWriter) error {
+			err := msgWriter.Store(ctx, firstMsg)
+			if err != nil {
+				return err
+			}
+			return msgWriter.Store(ctx, secondMsg)
+		})
+		require.NoError(t, err)
+
+		require.Eventually(t, func() bool {
+			return publishedCount.Load() == 2
+		}, testTimeout, pollInterval)
+
+		requireEventuallyMessageNotInOutbox(t, firstMsg.ID)
+		requireEventuallyMessageNotInOutbox(t, secondMsg.ID)
+	})
+
+	t.Run("does not remove message from outbox if publisher returns an error", func(t *testing.T) {
+		publisher := &fakePublisher{
+			onPublish: func(_ context.Context, _ *outbox.Message) error {
+				return errors.New("any publisher error")
+			},
+		}
+		w := outbox.NewWriter(dbCtx, outbox.WithOptimisticPublisher(publisher))
+
+		anyMsg := createMessageFixture()
+		err := w.Write(context.Background(), func(ctx context.Context, _ outbox.TxQueryer, msgWriter outbox.MessageWriter) error {
+			return msgWriter.Store(ctx, anyMsg)
+		})
+		require.NoError(t, err)
+
+		require.Eventually(t, publisher.publishCalled.Load, testTimeout, pollInterval)
+		requireEventuallyMessageInOutbox(t, anyMsg.ID)
+	})
+
+	t.Run("does not remove message from outbox if optimistic publishing takes too long", func(t *testing.T) {
+		publisher := &fakePublisher{}
+		w := outbox.NewWriter(dbCtx,
+			outbox.WithOptimisticPublisher(publisher),
+			outbox.WithOptimisticTimeout(0), // context should be cancelled
+		)
+
+		anyMsg := createMessageFixture()
+		err := w.Write(context.Background(), func(ctx context.Context, _ outbox.TxQueryer, msgWriter outbox.MessageWriter) error {
+			return msgWriter.Store(ctx, anyMsg)
+		})
+		require.NoError(t, err)
+
+		require.Eventually(t, publisher.publishCalled.Load, testTimeout, pollInterval)
+		requireEventuallyMessageInOutbox(t, anyMsg.ID)
+	})
+
+	t.Run("publishes messages in CreatedAt order regardless of store order", func(t *testing.T) {
+		var publishOrder []uuid.UUID
+		var mu sync.Mutex
+		publisher := &fakePublisher{
+			onPublish: func(_ context.Context, msg *outbox.Message) error {
+				mu.Lock()
+				defer mu.Unlock()
+				publishOrder = append(publishOrder, msg.ID)
+				return nil
+			},
+		}
+		w := outbox.NewWriter(dbCtx, outbox.WithOptimisticPublisher(publisher))
+
+		now := time.Now().UTC()
+		oldestMsg := createMessageFixture(outbox.WithCreatedAt(now.Add(-2 * time.Second)))
+		middleMsg := createMessageFixture(outbox.WithCreatedAt(now.Add(-1 * time.Second)))
+		newestMsg := createMessageFixture(outbox.WithCreatedAt(now))
+
+		// Store in reverse order (newest first)
+		err := w.Write(context.Background(), func(ctx context.Context, _ outbox.TxQueryer, msgWriter outbox.MessageWriter) error {
+			if err := msgWriter.Store(ctx, newestMsg); err != nil {
+				return err
+			}
+			if err := msgWriter.Store(ctx, middleMsg); err != nil {
+				return err
+			}
+			return msgWriter.Store(ctx, oldestMsg)
+		})
+		require.NoError(t, err)
+
+		require.Eventually(t, func() bool {
+			mu.Lock()
+			defer mu.Unlock()
+			return len(publishOrder) == 3
+		}, testTimeout, pollInterval)
+
+		// Verify messages were published in CreatedAt order (oldest first)
+		require.Equal(t, oldestMsg.ID, publishOrder[0])
+		require.Equal(t, middleMsg.ID, publishOrder[1])
+		require.Equal(t, newestMsg.ID, publishOrder[2])
+	})
+
+	t.Run("stops publishing on first error and leaves remaining messages in outbox", func(t *testing.T) {
+		firstMsg := createMessageFixture()
+		secondMsg := createMessageFixture()
+		thirdMsg := createMessageFixture()
+
+		var publishedIDs []uuid.UUID
+		var mu sync.Mutex
+		publisher := &fakePublisher{
+			onPublish: func(_ context.Context, msg *outbox.Message) error {
+				mu.Lock()
+				defer mu.Unlock()
+				if msg.ID == secondMsg.ID {
+					return errors.New("simulated publish error on message B")
+				}
+				publishedIDs = append(publishedIDs, msg.ID)
+				return nil
+			},
+		}
+		w := outbox.NewWriter(dbCtx, outbox.WithOptimisticPublisher(publisher))
+
+		err := w.Write(context.Background(), func(ctx context.Context, _ outbox.TxQueryer, msgWriter outbox.MessageWriter) error {
+			if err := msgWriter.Store(ctx, firstMsg); err != nil {
+				return err
+			}
+			if err := msgWriter.Store(ctx, secondMsg); err != nil {
+				return err
+			}
+			return msgWriter.Store(ctx, thirdMsg)
+		})
+		require.NoError(t, err)
+
+		requireEventuallyMessageNotInOutbox(t, firstMsg.ID)
+
+		mu.Lock()
+		require.Equal(t, []uuid.UUID{firstMsg.ID}, publishedIDs)
+		mu.Unlock()
+
+		requireMessageInOutbox(t, secondMsg.ID)
+		requireMessageInOutbox(t, thirdMsg.ID)
+	})
+
+	t.Run("publishes ready messages and skips scheduled ones", func(t *testing.T) {
+		now := time.Now().UTC()
+		futureTime := now.Add(1 * time.Hour)
+
+		firstReadyMsg := createMessageFixture()
+		scheduledMsg := createMessageFixture(outbox.WithScheduledAt(futureTime))
+		secondReadyMsg := createMessageFixture()
+
+		var publishedIDs []uuid.UUID
+		var mu sync.Mutex
+		publisher := &fakePublisher{
+			onPublish: func(_ context.Context, msg *outbox.Message) error {
+				mu.Lock()
+				defer mu.Unlock()
+				publishedIDs = append(publishedIDs, msg.ID)
+				return nil
+			},
+		}
+		w := outbox.NewWriter(dbCtx, outbox.WithOptimisticPublisher(publisher))
+
+		err := w.Write(context.Background(), func(ctx context.Context, _ outbox.TxQueryer, msgWriter outbox.MessageWriter) error {
+			if err := msgWriter.Store(ctx, firstReadyMsg); err != nil {
+				return err
+			}
+			if err := msgWriter.Store(ctx, scheduledMsg); err != nil {
+				return err
+			}
+			return msgWriter.Store(ctx, secondReadyMsg)
+		})
+		require.NoError(t, err)
+
+		require.Eventually(t, func() bool {
+			mu.Lock()
+			defer mu.Unlock()
+			return len(publishedIDs) == 2
+		}, testTimeout, pollInterval)
+
+		mu.Lock()
+		require.Contains(t, publishedIDs, firstReadyMsg.ID)
+		require.Contains(t, publishedIDs, secondReadyMsg.ID)
+		require.NotContains(t, publishedIDs, scheduledMsg.ID)
+		mu.Unlock()
+
+		requireMessageNotInOutbox(t, firstReadyMsg.ID)
+		requireMessageNotInOutbox(t, secondReadyMsg.ID)
+		requireMessageInOutbox(t, scheduledMsg.ID)
+	})
+}
+
+func TestWriteOne(t *testing.T) {
 	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
 	w := outbox.NewWriter(dbCtx)
 
-	anyMsg := createMessageFixture()
+	t.Run("stores message and executes queries atomically", func(t *testing.T) {
+		anyMsg := createMessageFixture()
+		anyEntity := createEntityFixture()
 
-	err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxQueryer) error {
-		return errors.New("any error in callback")
+		err := w.WriteOne(context.Background(), anyMsg, func(ctx context.Context, tx outbox.TxQueryer) error {
+			rows, err := tx.QueryContext(ctx, "SELECT id, created_at FROM entity WHERE id = $1", anyEntity.ID)
+			require.NoError(t, err)
+			defer func() {
+				_ = rows.Close()
+			}()
+			require.False(t, rows.Next())
+
+			_, err = tx.ExecContext(ctx, "INSERT INTO entity (id, created_at) VALUES ($1, $2)", anyEntity.ID, anyEntity.CreatedAt)
+			require.NoError(t, err)
+
+			return nil
+		})
+		require.NoError(t, err)
+
+		savedMessage, found := readOutboxMessage(t, anyMsg.ID)
+		require.True(t, found)
+		assertMessageEqual(t, anyMsg, savedMessage)
+
+		savedEntity, found := readEntity(t, anyEntity.ID)
+		require.True(t, found)
+		assertEntityEqual(t, anyEntity, *savedEntity)
 	})
 
-	require.Error(t, err)
+	t.Run("returns error on transaction begin failure", func(t *testing.T) {
+		anyMsg := createMessageFixture()
 
-	_, found := readOutboxMessage(t, anyMsg.ID)
-	require.False(t, found)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel() // forces error on tx begin
+
+		err := w.WriteOne(ctx, anyMsg, func(_ context.Context, _ outbox.TxQueryer) error {
+			return nil
+		})
+		require.Error(t, err)
+		require.ErrorIs(t, err, context.Canceled)
+
+		requireMessageNotInOutbox(t, anyMsg.ID)
+	})
+
+	t.Run("rolls back on message store error", func(t *testing.T) {
+		anyMsg := createMessageFixture()
+		err := w.WriteOne(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxQueryer) error {
+			return nil
+		})
+		require.NoError(t, err)
+
+		anyEntity := createEntityFixture()
+		err = w.WriteOne(context.Background(), anyMsg, func(ctx context.Context, tx outbox.TxQueryer) error {
+			_, err := tx.ExecContext(ctx, "INSERT INTO entity (id, created_at) VALUES ($1, $2)", anyEntity.ID, anyEntity.CreatedAt)
+			require.NoError(t, err)
+			return nil
+		})
+		require.Error(t, err)
+
+		var pqError *pq.Error
+		require.ErrorAs(t, err, &pqError) // duplicate message ID
+		require.Equal(t, pq.ErrorCode("23505"), pqError.Code)
+
+		requireEntityNotInDB(t, anyEntity.ID)
+	})
+
+	t.Run("rolls back on callback error", func(t *testing.T) {
+		anyMsg := createMessageFixture()
+
+		err := w.WriteOne(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxQueryer) error {
+			return errors.New("any error in callback")
+		})
+
+		require.Error(t, err)
+
+		requireMessageNotInOutbox(t, anyMsg.ID)
+	})
 }
 
-type fakePublisher struct {
-	publishCalled atomic.Bool
-	onPublish     func(context.Context, *outbox.Message) error
-}
-
-func (p *fakePublisher) Publish(ctx context.Context, msg *outbox.Message) error {
-	p.publishCalled.Store(true)
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-	if p.onPublish != nil {
-		return p.onPublish(ctx, msg)
-	}
-	return nil
-}
-
-func TestWriterWithOptimisticPublisher(t *testing.T) {
+func TestWriteOneWithOptimisticPublisher(t *testing.T) {
 	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
-	t.Run("publishes message and removes it from outbox if callback succeeds", func(t *testing.T) {
+
+	t.Run("publishes message and removes it from outbox on success", func(t *testing.T) {
 		publisher := &fakePublisher{}
 		w := outbox.NewWriter(dbCtx, outbox.WithOptimisticPublisher(publisher))
 
 		anyMsg := createMessageFixture()
-		err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxQueryer) error {
+		err := w.WriteOne(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxQueryer) error {
 			return nil
 		})
 		require.NoError(t, err)
@@ -153,36 +476,46 @@ func TestWriterWithOptimisticPublisher(t *testing.T) {
 		w := outbox.NewWriter(dbCtx, outbox.WithOptimisticPublisher(publisher))
 
 		anyMsg := createMessageFixture()
-		err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxQueryer) error {
+		err := w.WriteOne(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxQueryer) error {
 			return nil
 		})
 		require.NoError(t, err)
 
 		require.Eventually(t, publisher.publishCalled.Load, testTimeout, pollInterval)
-
-		require.Eventually(t, func() bool {
-			_, found := readOutboxMessage(t, anyMsg.ID)
-			return found
-		}, testTimeout, pollInterval)
+		requireEventuallyMessageInOutbox(t, anyMsg.ID)
 	})
 
 	t.Run("does not remove message from outbox if optimistic publishing takes too long", func(t *testing.T) {
 		publisher := &fakePublisher{}
 		w := outbox.NewWriter(dbCtx,
 			outbox.WithOptimisticPublisher(publisher),
-			outbox.WithOptimisticTimeout(0), // context should be cancelled
+			outbox.WithOptimisticTimeout(0),
 		)
 
 		anyMsg := createMessageFixture()
-		err := w.Write(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxQueryer) error {
+		err := w.WriteOne(context.Background(), anyMsg, func(_ context.Context, _ outbox.TxQueryer) error {
 			return nil
 		})
 		require.NoError(t, err)
 
 		require.Eventually(t, publisher.publishCalled.Load, testTimeout, pollInterval)
+		requireEventuallyMessageInOutbox(t, anyMsg.ID)
+	})
 
-		_, found := readOutboxMessage(t, anyMsg.ID)
-		require.True(t, found)
+	t.Run("does not publish message scheduled for the future", func(t *testing.T) {
+		publisher := &fakePublisher{}
+		w := outbox.NewWriter(dbCtx, outbox.WithOptimisticPublisher(publisher))
+
+		futureTime := time.Now().UTC().Add(1 * time.Hour)
+		scheduledMsg := createMessageFixture(outbox.WithScheduledAt(futureTime))
+
+		err := w.WriteOne(context.Background(), scheduledMsg, func(_ context.Context, _ outbox.TxQueryer) error {
+			return nil
+		})
+		require.NoError(t, err)
+
+		require.Never(t, publisher.publishCalled.Load, 50*time.Millisecond, 10*time.Millisecond)
+		requireMessageInOutbox(t, scheduledMsg.ID)
 	})
 }
 
@@ -192,20 +525,21 @@ func TestUnmanagedWriter(t *testing.T) {
 	dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
 	w := outbox.NewWriter(dbCtx)
 	uw := w.Unmanaged()
-	t.Run("stores messages in outbox table if transaction commits", func(t *testing.T) {
+
+	t.Run("stores messages on transaction commit", func(t *testing.T) {
 		tx, err := db.BeginTx(ctx, nil)
 		require.NoError(t, err)
 		defer func() {
 			_ = tx.Rollback()
 		}()
 
-		anyMsg := createMessageFixture()
-		anyOtherMsg := createMessageFixture()
+		firstMsg := createMessageFixture()
+		secondMsg := createMessageFixture()
 
-		err = uw.Store(ctx, tx, anyMsg)
+		err = uw.Store(ctx, tx, firstMsg)
 		require.NoError(t, err)
 
-		err = uw.Store(ctx, tx, anyOtherMsg)
+		err = uw.Store(ctx, tx, secondMsg)
 		require.NoError(t, err)
 
 		anyEntity := createEntityFixture()
@@ -215,20 +549,20 @@ func TestUnmanagedWriter(t *testing.T) {
 		err = tx.Commit()
 		require.NoError(t, err)
 
-		savedMessage, found := readOutboxMessage(t, anyMsg.ID)
+		firstSavedMessage, found := readOutboxMessage(t, firstMsg.ID)
 		require.True(t, found)
-		assertMessageEqual(t, anyMsg, savedMessage)
+		assertMessageEqual(t, firstMsg, firstSavedMessage)
 
-		otherSavedMessage, found := readOutboxMessage(t, anyOtherMsg.ID)
+		secondSavedMessage, found := readOutboxMessage(t, secondMsg.ID)
 		require.True(t, found)
-		assertMessageEqual(t, anyOtherMsg, otherSavedMessage)
+		assertMessageEqual(t, secondMsg, secondSavedMessage)
 
 		savedEntity, found := readEntity(t, anyEntity.ID)
 		require.True(t, found)
 		assertEntityEqual(t, anyEntity, *savedEntity)
 	})
 
-	t.Run("does not store message in outbox table if transaction is not committed", func(t *testing.T) {
+	t.Run("does not store message without commit", func(t *testing.T) {
 		tx, err := db.BeginTx(ctx, nil)
 		require.NoError(t, err)
 		defer func() {
@@ -239,11 +573,10 @@ func TestUnmanagedWriter(t *testing.T) {
 		err = uw.Store(ctx, tx, anyMsg)
 		require.NoError(t, err)
 
-		_, found := readOutboxMessage(t, anyMsg.ID)
-		require.False(t, found)
+		requireMessageNotInOutbox(t, anyMsg.ID)
 	})
 
-	t.Run("returns error if query fails", func(t *testing.T) {
+	t.Run("returns error on duplicate message", func(t *testing.T) {
 		tx, err := db.BeginTx(ctx, nil)
 		require.NoError(t, err)
 		defer func() {
@@ -254,7 +587,7 @@ func TestUnmanagedWriter(t *testing.T) {
 		err = uw.Store(ctx, tx, anyMsg)
 		require.NoError(t, err)
 
-		err = uw.Store(ctx, tx, anyMsg) // Uniqueness constraint violation when storing the outbox message
+		err = uw.Store(ctx, tx, anyMsg) // duplicate message ID
 		require.Error(t, err)
 
 		var pqError *pq.Error
@@ -262,7 +595,7 @@ func TestUnmanagedWriter(t *testing.T) {
 		require.Equal(t, pq.ErrorCode("23505"), pqError.Code)
 	})
 
-	t.Run("returns error if context is cancelled", func(t *testing.T) {
+	t.Run("returns error on cancelled context", func(t *testing.T) {
 		tx, err := db.BeginTx(ctx, nil)
 		require.NoError(t, err)
 		defer func() {
@@ -270,7 +603,7 @@ func TestUnmanagedWriter(t *testing.T) {
 		}()
 
 		ctx, cancel := context.WithCancel(ctx)
-		cancel() // force an error on Store
+		cancel()
 
 		anyMsg := createMessageFixture()
 		err = uw.Store(ctx, tx, anyMsg)
@@ -278,6 +611,27 @@ func TestUnmanagedWriter(t *testing.T) {
 		require.Error(t, err)
 		require.ErrorIs(t, err, context.Canceled)
 	})
+}
+
+type entity struct {
+	ID        uuid.UUID
+	CreatedAt time.Time
+}
+
+type fakePublisher struct {
+	publishCalled atomic.Bool
+	onPublish     func(context.Context, *outbox.Message) error
+}
+
+func (p *fakePublisher) Publish(ctx context.Context, msg *outbox.Message) error {
+	p.publishCalled.Store(true)
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if p.onPublish != nil {
+		return p.onPublish(ctx, msg)
+	}
+	return nil
 }
 
 func readOutboxMessage(t *testing.T, id uuid.UUID) (*outbox.Message, bool) {
@@ -294,6 +648,18 @@ func readOutboxMessage(t *testing.T, id uuid.UUID) (*outbox.Message, bool) {
 	return &msg, true
 }
 
+func requireMessageInOutbox(t *testing.T, id uuid.UUID) {
+	t.Helper()
+	_, found := readOutboxMessage(t, id)
+	require.True(t, found)
+}
+
+func requireMessageNotInOutbox(t *testing.T, id uuid.UUID) {
+	t.Helper()
+	_, found := readOutboxMessage(t, id)
+	require.False(t, found)
+}
+
 func readEntity(t *testing.T, id uuid.UUID) (*entity, bool) {
 	t.Helper()
 
@@ -306,6 +672,34 @@ func readEntity(t *testing.T, id uuid.UUID) (*entity, bool) {
 	}
 	require.NoError(t, err)
 	return &e, true
+}
+
+func requireEntityInDB(t *testing.T, id uuid.UUID) {
+	t.Helper()
+	_, found := readEntity(t, id)
+	require.True(t, found)
+}
+
+func requireEntityNotInDB(t *testing.T, id uuid.UUID) {
+	t.Helper()
+	_, found := readEntity(t, id)
+	require.False(t, found)
+}
+
+func requireEventuallyMessageInOutbox(t *testing.T, id uuid.UUID) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		_, found := readOutboxMessage(t, id)
+		return found
+	}, testTimeout, pollInterval)
+}
+
+func requireEventuallyMessageNotInOutbox(t *testing.T, id uuid.UUID) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		_, found := readOutboxMessage(t, id)
+		return !found
+	}, testTimeout, pollInterval)
 }
 
 func createMessageFixture(opts ...outbox.MessageOption) *outbox.Message {

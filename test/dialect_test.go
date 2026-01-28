@@ -115,25 +115,39 @@ func TestDialectSucceeds(t *testing.T) {
 			dbCtx := outbox.NewDBContext(db, tt.dialect)
 			w := outbox.NewWriter(dbCtx)
 
-			successMsg := createMessageFixture()
-			err = w.Write(context.Background(), successMsg, func(_ context.Context, _ outbox.TxQueryer) error {
-				return nil
+			firstSuccessMsg := createMessageFixture()
+			secondSuccessMsg := createMessageFixture(outbox.WithCreatedAt(firstSuccessMsg.CreatedAt.Add(1 * time.Second)))
+			err = w.Write(context.Background(), func(ctx context.Context, _ outbox.TxQueryer, msgWriter outbox.MessageWriter) error {
+				err := msgWriter.Store(ctx, firstSuccessMsg)
+				if err != nil {
+					return err
+				}
+				return msgWriter.Store(ctx, secondSuccessMsg)
 			})
 			require.NoError(t, err)
 
-			failingMsg := createMessageFixture(outbox.WithCreatedAt(successMsg.CreatedAt.Add(1 * time.Second)))
-			err = w.Write(context.Background(), failingMsg, func(_ context.Context, _ outbox.TxQueryer) error {
+			failingMsg := createMessageFixture(outbox.WithCreatedAt(secondSuccessMsg.CreatedAt.Add(1 * time.Second)))
+			err = w.WriteOne(context.Background(), failingMsg, func(_ context.Context, _ outbox.TxQueryer) error {
 				return nil
 			})
 			require.NoError(t, err)
 
 			r := outbox.NewReader(dbCtx, &fakePublisher{
 				onPublish: func(_ context.Context, msg *outbox.Message) error {
+					if msg.ID == firstSuccessMsg.ID {
+						assertMessageEqual(t, firstSuccessMsg, msg)
+						return nil
+					}
+					if msg.ID == secondSuccessMsg.ID {
+						assertMessageEqual(t, secondSuccessMsg, msg)
+						return nil
+					}
 					if msg.ID == failingMsg.ID {
 						assertMessageEqual(t, failingMsg, msg)
 						return errors.New("failed to publish")
 					}
-					assertMessageEqual(t, successMsg, msg)
+
+					t.Fatalf("unexpected message: %v", msg)
 					return nil
 				},
 			},
