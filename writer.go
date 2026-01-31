@@ -125,7 +125,7 @@ func NewWriter(dbCtx *DBContext, opts ...WriterOption) *Writer {
 func (w *Writer) Write(ctx context.Context, fn OutboxWorkFunc) error {
 	tx, err := w.dbCtx.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("begin transaction: %w", err)
+		return fmt.Errorf("beginning transaction: %w", err)
 	}
 
 	var txCommitted bool
@@ -168,7 +168,7 @@ func (w *Writer) Write(ctx context.Context, fn OutboxWorkFunc) error {
 	}
 
 	if err != nil {
-		return fmt.Errorf("commit transaction: %w", err)
+		return fmt.Errorf("committing transaction: %w", err)
 	}
 
 	return nil
@@ -264,7 +264,7 @@ func insertOutboxMessage(ctx context.Context, dbCtx *DBContext, tx TxQueryer, ms
 		dbCtx.getSQLPlaceholder(6))
 	_, err := tx.ExecContext(ctx, query, dbCtx.formatMessageIDForDB(msg), msg.CreatedAt, msg.ScheduledAt, msg.Metadata, msg.Payload, 0)
 	if err != nil {
-		return fmt.Errorf("store message in outbox: %w", err)
+		return fmt.Errorf("storing message in outbox: %w", err)
 	}
 	return nil
 }

@@ -15,19 +15,20 @@ Lightweight library for the [transactional outbox pattern](https://microservices
 ## Key Features
 
 - **Lightweight:** Adds only one external dependency: [google/uuid](https://github.com/google/uuid)
-- **Database Agnostic:** Works with PostgreSQL, MySQL, Oracle and other relational databases.
-- **Message Broker Agnostic:** Works with any message broker or external system.
+- **Database agnostic:** Works with PostgreSQL, MySQL, Oracle and other relational databases.
+- **Message broker agnostic:** Works with any message broker or external system.
 - **Easy integration:** Designed for easy integration into your own projects.
 - **Observability:** Exposes channels for processing errors and discarded messages that you can connect to your metrics and alerting systems.
-- **Fast Publishing:** Optional immediate async message publishing after transaction commit for reduced latency, with guaranteed delivery fallback.
-- **Configurable Retry & Backoff Policies:** Fixed, exponential or custom backoff strategies when delivery fails.
-- **Max Attempts Safeguard:** Automatically discards poison messages that exceed a configurable `maxAttempts` threshold.
+- **Fast publishing:** Optional immediate async message publishing after transaction commit for reduced latency, with guaranteed delivery fallback.
+- **Configurable retry and backoff policies:** Fixed, exponential or custom backoff strategies when delivery fails.
+- **Max attempts safeguard:** Automatically discards poison messages that exceed a configurable `maxAttempts` threshold.
+- **Scheduled messages:** Delay message publishing to a future time.
 
 ## Usage
 
 The library consists of two main components:
 
-1. **Writer**: Stores your entity and corresponding message atomically within a transaction
+1. **Writer**: Stores your business objects and corresponding messages atomically within a transaction
 2. **Reader**: Publishes stored messages to your message broker in the background
 
 ### The Writer

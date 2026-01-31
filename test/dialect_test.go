@@ -144,7 +144,7 @@ func TestDialectSucceeds(t *testing.T) {
 					}
 					if msg.ID == failingMsg.ID {
 						assertMessageEqual(t, failingMsg, msg)
-						return errors.New("failed to publish")
+						return errors.New("publish error")
 					}
 
 					t.Fatalf("unexpected message: %v", msg)

@@ -310,7 +310,7 @@ type PublishError struct {
 }
 
 func (e *PublishError) Error() string {
-	return fmt.Sprintf("failed to publish message %s: %v", e.Message.ID, e.Err)
+	return fmt.Sprintf("publishing message %s: %v", e.Message.ID, e.Err)
 }
 func (e *PublishError) Unwrap() error { return e.Err }
 
@@ -322,7 +322,7 @@ type UpdateError struct {
 }
 
 func (e *UpdateError) Error() string {
-	return fmt.Sprintf("failed to update message %s: %v", e.Message.ID, e.Err)
+	return fmt.Sprintf("updating message %s: %v", e.Message.ID, e.Err)
 }
 func (e *UpdateError) Unwrap() error { return e.Err }
 
@@ -334,7 +334,7 @@ type DeleteError struct {
 }
 
 func (e *DeleteError) Error() string {
-	return fmt.Sprintf("failed to delete %d messages: %v", len(e.Messages), e.Err)
+	return fmt.Sprintf("deleting %d messages: %v", len(e.Messages), e.Err)
 }
 func (e *DeleteError) Unwrap() error { return e.Err }
 
@@ -343,7 +343,7 @@ type ReadError struct {
 	Err error
 }
 
-func (e *ReadError) Error() string { return fmt.Sprintf("failed to read outbox messages: %v", e.Err) }
+func (e *ReadError) Error() string { return fmt.Sprintf("reading outbox messages: %v", e.Err) }
 
 func (e *ReadError) Unwrap() error { return e.Err }
 
@@ -499,7 +499,7 @@ func (r *Reader) scheduleNextAttempt(msg *Message) error {
 		r.dbCtx.getSQLPlaceholder(1), r.dbCtx.getSQLPlaceholder(2))
 	_, err := r.dbCtx.db.ExecContext(ctx, query, nextScheduledAt, r.dbCtx.formatMessageIDForDB(msg))
 	if err != nil {
-		return fmt.Errorf("failed to schedule next attempt for message %s: %w", msg.ID, err)
+		return fmt.Errorf("scheduling next attempt for message %s: %w", msg.ID, err)
 	}
 
 	return nil
@@ -542,7 +542,7 @@ func (r *Reader) readOutboxMessages() ([]*Message, error) {
 	query := r.dbCtx.buildSelectMessagesQuery()
 	rows, err := r.dbCtx.db.QueryContext(ctx, query, r.maxMessages)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query outbox messages: %w", err)
+		return nil, fmt.Errorf("querying outbox messages: %w", err)
 	}
 	defer func() {
 		_ = rows.Close()
@@ -552,12 +552,12 @@ func (r *Reader) readOutboxMessages() ([]*Message, error) {
 	for rows.Next() {
 		msg := &Message{}
 		if err := rows.Scan(&msg.ID, &msg.Payload, &msg.CreatedAt, &msg.ScheduledAt, &msg.Metadata, &msg.TimesAttempted); err != nil {
-			return nil, fmt.Errorf("failed to scan outbox message: %w", err)
+			return nil, fmt.Errorf("scanning outbox message: %w", err)
 		}
 		messages = append(messages, msg)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("unexpected error while scanning outbox messages: %w", err)
+		return nil, fmt.Errorf("iterating outbox messages: %w", err)
 	}
 	return messages, nil
 }
