@@ -33,18 +33,20 @@ The library consists of two main components:
 
 ### The Writer
 
+Supports two transaction management models, depending on how much control you need.
+
+#### 1. Library managed transactions
+
+The Writer handles the entire transaction lifecycle (begin, commit, rollback) for you. This is the recommended approach for most use cases, as it reduces boilerplate and avoids common transactional pitfalls.
+
 ```go
 // Initialise Writer
 db, _ := sql.Open("pgx", "postgres://...")
 dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
 writer := outbox.NewWriter(dbCtx)
 
-// --- Option 1: Library-managed transactions (recommended) ---
-//
-// The library handles begin/commit/rollback. If the callback returns an error,
-// the transaction is rolled back
-//
-// Use Write function for conditional or multiple message publishing
+// Use Write function for conditional or multiple message publishing.
+// If the callback returns an error the transaction is rolled back
 err = writer.Write(ctx,
         func(ctx context.Context, tx outbox.TxQueryer, msgWriter outbox.MessageWriter) error {
 
@@ -74,11 +76,13 @@ err = writer.WriteOne(ctx, msg, func(ctx context.Context, tx outbox.TxQueryer) e
         entity.ID, entity.CreatedAt)
     return err
 })
+```
 
-// --- Option 2: User-managed transactions ---
-//
-// User handles begin/commit/rollback
-//
+#### 2. User managed transactions
+
+You control the transaction lifecycle yourself, giving full flexibility to integrate the outbox into existing transaction management patterns.
+
+```go
 // For users who want to manage the transaction lifecycle themselves
 // and only need to persist outbox messages
 unmanagedWriter := writer.Unmanaged()
