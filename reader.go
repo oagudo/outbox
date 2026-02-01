@@ -246,7 +246,7 @@ func NewReader(dbCtx *DBContext, msgPublisher MessagePublisher, opts ...ReaderOp
 }
 
 // Start begins the background processing of outbox messages.
-// It periodically reads unpublished messages and attempts to publish them.
+// It processes messages immediately and then continues to process messages periodically.
 // If Start is called multiple times, only the first call has an effect.
 func (r *Reader) Start() {
 	if !atomic.CompareAndSwapInt32(&r.started, 0, 1) {
@@ -261,6 +261,8 @@ func (r *Reader) Start() {
 		defer close(r.errCh)
 		defer close(r.discardedMsgsCh)
 		defer ticker.Stop()
+
+		r.publishMessages()
 
 		for {
 			select {
