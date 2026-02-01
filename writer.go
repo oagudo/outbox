@@ -276,12 +276,13 @@ func (w *Writer) deleteMessages(ctx context.Context, msgs []*Message) {
 	}
 
 	// nolint:gosec // Query built with placeholders ($1,$2..), not actual values
-	query := fmt.Sprintf("DELETE FROM outbox WHERE id IN (%s)", strings.Join(placeholders, ", "))
+	query := fmt.Sprintf("DELETE FROM %s WHERE id IN (%s)", w.dbCtx.tableName, strings.Join(placeholders, ", "))
 	_, _ = w.dbCtx.db.ExecContext(ctx, query, ids...)
 }
 
 func insertOutboxMessage(ctx context.Context, dbCtx *DBContext, tx TxQueryer, msg *Message) error {
-	query := fmt.Sprintf("INSERT INTO outbox (id, created_at, scheduled_at, metadata, payload, times_attempted) VALUES (%s, %s, %s, %s, %s, %s)",
+	query := fmt.Sprintf("INSERT INTO %s (id, created_at, scheduled_at, metadata, payload, times_attempted) VALUES (%s, %s, %s, %s, %s, %s)",
+		dbCtx.tableName,
 		dbCtx.getSQLPlaceholder(1),
 		dbCtx.getSQLPlaceholder(2),
 		dbCtx.getSQLPlaceholder(3),

@@ -495,8 +495,8 @@ func (r *Reader) scheduleNextAttempt(msg *Message) error {
 	nextScheduledAt := time.Now().UTC().Add(delay)
 
 	// nolint:gosec // Query built with placeholders ($1,$2..), not actual values
-	query := fmt.Sprintf("UPDATE outbox SET times_attempted = times_attempted + 1, scheduled_at = %s WHERE id = %s",
-		r.dbCtx.getSQLPlaceholder(1), r.dbCtx.getSQLPlaceholder(2))
+	query := fmt.Sprintf("UPDATE %s SET times_attempted = times_attempted + 1, scheduled_at = %s WHERE id = %s",
+		r.dbCtx.tableName, r.dbCtx.getSQLPlaceholder(1), r.dbCtx.getSQLPlaceholder(2))
 	_, err := r.dbCtx.db.ExecContext(ctx, query, nextScheduledAt, r.dbCtx.formatMessageIDForDB(msg))
 	if err != nil {
 		return fmt.Errorf("scheduling next attempt for message %s: %w", msg.ID, err)
@@ -528,7 +528,7 @@ func (r *Reader) deleteMessages(msgsToDelete []*Message) error {
 		ids = append(ids, r.dbCtx.formatMessageIDForDB(msg))
 	}
 	// nolint:gosec // Query built with placeholders ($1,$2..), not actual values
-	query := fmt.Sprintf("DELETE FROM outbox WHERE id IN (%s)", strings.Join(placeholders, ", "))
+	query := fmt.Sprintf("DELETE FROM %s WHERE id IN (%s)", r.dbCtx.tableName, strings.Join(placeholders, ", "))
 	_, err := r.dbCtx.db.ExecContext(ctx, query, ids...)
 
 	return err

@@ -48,22 +48,41 @@ type DB interface {
 
 // DBContext holds the database connection and the SQL dialect.
 type DBContext struct {
-	db      DB
-	dialect SQLDialect
+	db        DB
+	dialect   SQLDialect
+	tableName string
+}
+
+// DBContextOption is a function that configures a DBContext instance.
+type DBContextOption func(*DBContext)
+
+// WithTableName sets a custom table name for the outbox table.
+// Default is "outbox".
+func WithTableName(tableName string) DBContextOption {
+	return func(c *DBContext) {
+		c.tableName = tableName
+	}
 }
 
 // NewDBContext creates a new DBContext from a standard *sql.DB.
-func NewDBContext(db *sql.DB, dialect SQLDialect) *DBContext {
-	return NewDBContextWithDB(&dbAdapter{DB: db}, dialect)
+func NewDBContext(db *sql.DB, dialect SQLDialect, opts ...DBContextOption) *DBContext {
+	return NewDBContextWithDB(&dbAdapter{DB: db}, dialect, opts...)
 }
 
 // NewDBContextWithDB creates a new DBContext with a custom DB implementation.
 // This is useful for users who want to provide their own database abstraction or for testing.
-func NewDBContextWithDB(db DB, dialect SQLDialect) *DBContext {
-	return &DBContext{
-		db:      db,
-		dialect: dialect,
+func NewDBContextWithDB(db DB, dialect SQLDialect, opts ...DBContextOption) *DBContext {
+	c := &DBContext{
+		db:        db,
+		dialect:   dialect,
+		tableName: "outbox",
 	}
+
+	for _, opt := range opts {
+		opt(c)
+	}
+
+	return c
 }
 
 // formatMessageIDForDB formats the message ID for the based on the SQL dialect.
@@ -117,21 +136,21 @@ func (c *DBContext) buildSelectMessagesQuery() string {
 	switch c.dialect {
 	case SQLDialectOracle:
 		return fmt.Sprintf(`SELECT id, payload, created_at, scheduled_at, metadata, times_attempted 
-			FROM outbox
+			FROM %s
 			WHERE scheduled_at <= %s
-			ORDER BY created_at ASC FETCH FIRST %s ROWS ONLY`, c.getCurrentTimestampInUTC(), limitPlaceholder)
+			ORDER BY created_at ASC FETCH FIRST %s ROWS ONLY`, c.tableName, c.getCurrentTimestampInUTC(), limitPlaceholder)
 
 	case SQLDialectSQLServer:
 		return fmt.Sprintf(`SELECT TOP (%s) id, payload, created_at, scheduled_at, metadata, times_attempted 
-			FROM outbox
+			FROM %s
 			WHERE scheduled_at <= %s
-			ORDER BY created_at ASC`, limitPlaceholder, c.getCurrentTimestampInUTC())
+			ORDER BY created_at ASC`, limitPlaceholder, c.tableName, c.getCurrentTimestampInUTC())
 
 	default:
 		return fmt.Sprintf(`SELECT id, payload, created_at, scheduled_at, metadata, times_attempted 
-			FROM outbox
+			FROM %s
 			WHERE scheduled_at <= %s
-			ORDER BY created_at ASC LIMIT %s`, c.getCurrentTimestampInUTC(), limitPlaceholder)
+			ORDER BY created_at ASC LIMIT %s`, c.tableName, c.getCurrentTimestampInUTC(), limitPlaceholder)
 	}
 }
 
