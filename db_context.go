@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"regexp"
 )
 
 // SQLDialect represents a SQL database dialect.
@@ -58,6 +59,9 @@ type DBContextOption func(*DBContext)
 
 // WithTableName sets a custom table name for the outbox table.
 // Default is "outbox".
+// The table name must be a valid SQL identifier matching the pattern [a-zA-Z_][a-zA-Z0-9_]*
+// (must start with a letter or underscore, followed by letters, digits, or underscores).
+// An invalid table name will cause a panic when creating the DBContext.
 func WithTableName(tableName string) DBContextOption {
 	return func(c *DBContext) {
 		c.tableName = tableName
@@ -82,7 +86,27 @@ func NewDBContextWithDB(db DB, dialect SQLDialect, opts ...DBContextOption) *DBC
 		opt(c)
 	}
 
+	err := validateTableName(c.tableName)
+	if err != nil {
+		panic(err)
+	}
+
 	return c
+}
+
+var sqlIdentifierRegexp = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
+
+func validateTableName(name string) error {
+	if name == "" {
+		return fmt.Errorf("table name cannot be empty")
+	}
+	if !sqlIdentifierRegexp.MatchString(name) {
+		return fmt.Errorf(
+			"invalid table name %q: must match [a-zA-Z_][a-zA-Z0-9_]*",
+			name,
+		)
+	}
+	return nil
 }
 
 // formatMessageIDForDB formats the message ID for the based on the SQL dialect.
