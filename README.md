@@ -41,12 +41,15 @@ writer := outbox.NewWriter(dbCtx)
 
 // --- Option 1: Library-managed transactions (recommended) ---
 //
-// The library handles begin/commit/rollback. If the callback returns an error, the transaction is rolled back
+// The library handles begin/commit/rollback. If the callback returns an error,
+// the transaction is rolled back
 //
 // Use Write function for conditional or multiple message publishing
-err = writer.Write(ctx, func(ctx context.Context, tx outbox.TxQueryer, msgWriter outbox.MessageWriter) error {
+err = writer.Write(ctx,
+        func(ctx context.Context, tx outbox.TxQueryer, msgWriter outbox.MessageWriter) error {
+
     result, err := tx.ExecContext(ctx,
-        "UPDATE orders SET status = 'confirmed' WHERE id = $1 AND status = 'pending'", orderID)
+        "UPDATE orders SET status = 'confirmed' WHERE id = $1 AND status = 'pending'", id)
     if err != nil {
         return err
     }
@@ -146,6 +149,7 @@ reader := outbox.NewReader(
 )
 reader.Start()
 defer reader.Stop(context.Background()) // Stop during application shutdown
+```
 
 <details>
 <summary><strong>📊 Error Monitoring</strong></summary>
