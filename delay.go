@@ -54,7 +54,7 @@ func Exponential(delay time.Duration, maxDelay time.Duration) DelayFunc {
 			return min(delay, maxDelay)
 		}
 
-		// nolint:gosec
+		// nolint:gosec // attempt is always non-negative (retry count)
 		n := min(uint(attempt), maxShifts)
 
 		nextDelay := delay << n

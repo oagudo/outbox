@@ -275,7 +275,7 @@ func (w *Writer) deleteMessages(ctx context.Context, msgs []*Message) {
 		ids = append(ids, w.dbCtx.formatMessageIDForDB(msg))
 	}
 
-	// nolint:gosec
+	// nolint:gosec // Query built with placeholders ($1,$2..), not actual values
 	query := fmt.Sprintf("DELETE FROM outbox WHERE id IN (%s)", strings.Join(placeholders, ", "))
 	_, _ = w.dbCtx.db.ExecContext(ctx, query, ids...)
 }

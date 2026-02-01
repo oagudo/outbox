@@ -494,7 +494,7 @@ func (r *Reader) scheduleNextAttempt(msg *Message) error {
 	delay := r.delayFunc(int(msg.TimesAttempted))
 	nextScheduledAt := time.Now().UTC().Add(delay)
 
-	// nolint:gosec
+	// nolint:gosec // Query built with placeholders ($1,$2..), not actual values
 	query := fmt.Sprintf("UPDATE outbox SET times_attempted = times_attempted + 1, scheduled_at = %s WHERE id = %s",
 		r.dbCtx.getSQLPlaceholder(1), r.dbCtx.getSQLPlaceholder(2))
 	_, err := r.dbCtx.db.ExecContext(ctx, query, nextScheduledAt, r.dbCtx.formatMessageIDForDB(msg))
@@ -527,7 +527,7 @@ func (r *Reader) deleteMessages(msgsToDelete []*Message) error {
 		placeholders = append(placeholders, r.dbCtx.getSQLPlaceholder(idx+1))
 		ids = append(ids, r.dbCtx.formatMessageIDForDB(msg))
 	}
-	// nolint:gosec
+	// nolint:gosec // Query built with placeholders ($1,$2..), not actual values
 	query := fmt.Sprintf("DELETE FROM outbox WHERE id IN (%s)", strings.Join(placeholders, ", "))
 	_, err := r.dbCtx.db.ExecContext(ctx, query, ids...)
 
@@ -538,7 +538,7 @@ func (r *Reader) readOutboxMessages() ([]*Message, error) {
 	ctx, cancel := context.WithTimeout(r.ctx, r.readTimeout)
 	defer cancel()
 
-	// nolint:gosec
+	// nolint:gosec // Query built with SQL functions and placeholders, not user data
 	query := r.dbCtx.buildSelectMessagesQuery()
 	rows, err := r.dbCtx.db.QueryContext(ctx, query, r.maxMessages)
 	if err != nil {
