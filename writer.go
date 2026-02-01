@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -149,22 +150,7 @@ func (w *Writer) Write(ctx context.Context, fn OutboxWorkFunc) error {
 	txCommitted = err == nil
 
 	if txCommitted && w.msgPublisher != nil {
-		go func() {
-			asyncCtx := context.WithoutCancel(ctx) // optimistic path is async, we don't want to cancel the context
-			now := time.Now().UTC()                // freeze time for consistent scheduling decisions
-
-			// Sort by CreatedAt to match Reader ordering (ORDER BY created_at ASC)
-			slices.SortFunc(msgWriter.msgs, func(a, b *Message) int {
-				return a.CreatedAt.Compare(b.CreatedAt)
-			})
-
-			for _, msg := range msgWriter.msgs {
-				if !w.tryPublishMessage(asyncCtx, msg, now) {
-					// Stop on first error - Reader will handle remaining messages
-					return
-				}
-			}
-		}()
+		go w.publishMessagesOptimistically(ctx, msgWriter.msgs)
 	}
 
 	if err != nil {
@@ -230,28 +216,68 @@ func (w *messageWriter) Store(ctx context.Context, msg *Message) error {
 	return nil
 }
 
-// tryPublishMessage attempts to publish a message and delete it from the outbox.
-// Returns true if the message was successfully published or skipped (scheduled for later),
-// false if publishing failed.
+// publishMessagesOptimistically attempts to publish messages immediately after transaction commit.
+// Messages are sorted by CreatedAt and published sequentially. Scheduled messages are skipped.
+// Successfully published messages are batch deleted from the outbox.
+// This is an optimization - the Reader handles any messages that fail or are skipped.
+func (w *Writer) publishMessagesOptimistically(ctx context.Context, msgs []*Message) {
+	ctx = context.WithoutCancel(ctx) // optimistic path is async, we don't want to cancel the context
+	now := time.Now().UTC()          // freeze time for consistent scheduling decisions
+
+	// Sort by CreatedAt to match Reader ordering (ORDER BY created_at ASC)
+	slices.SortFunc(msgs, func(a, b *Message) int {
+		return a.CreatedAt.Compare(b.CreatedAt)
+	})
+
+	publishedMsgs := make([]*Message, 0, len(msgs))
+	for _, msg := range msgs {
+		// Skip messages scheduled for the future - let the Reader handle them at the right time
+		if msg.ScheduledAt.After(now) {
+			continue
+		}
+
+		if !w.tryPublishMessage(ctx, msg) {
+			// Stop on first error - Reader will handle remaining messages
+			break
+		}
+		publishedMsgs = append(publishedMsgs, msg)
+	}
+
+	// Batch delete all successfully published messages
+	w.deleteMessages(ctx, publishedMsgs)
+}
+
+// tryPublishMessage attempts to publish a message to the external system.
+// Returns true if successful, false if publishing failed.
 // On failure, the message remains in the outbox for the Reader to handle.
-// The now parameter ensures consistent scheduling decisions across all messages in a batch.
-func (w *Writer) tryPublishMessage(ctx context.Context, msg *Message, now time.Time) bool {
-	// Skip messages scheduled for the future - let the Reader handle them at the right time
-	if msg.ScheduledAt.After(now) {
-		return true
+func (w *Writer) tryPublishMessage(ctx context.Context, msg *Message) bool {
+	ctx, cancel := context.WithTimeout(ctx, w.optimisticTimeout)
+	defer cancel()
+
+	err := w.msgPublisher.Publish(ctx, msg)
+	return err == nil
+}
+
+// deleteMessages batch deletes messages from the outbox table.
+// Errors are silently ignored - the Reader will handle any remaining messages.
+func (w *Writer) deleteMessages(ctx context.Context, msgs []*Message) {
+	if len(msgs) == 0 {
+		return
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, w.optimisticTimeout)
 	defer cancel()
 
-	err := w.msgPublisher.Publish(ctx, msg)
-	if err != nil {
-		return false
+	placeholders := make([]string, 0, len(msgs))
+	ids := make([]any, 0, len(msgs))
+	for idx, msg := range msgs {
+		placeholders = append(placeholders, w.dbCtx.getSQLPlaceholder(idx+1))
+		ids = append(ids, w.dbCtx.formatMessageIDForDB(msg))
 	}
 
-	query := fmt.Sprintf("DELETE FROM outbox WHERE id = %s", w.dbCtx.getSQLPlaceholder(1))
-	_, _ = w.dbCtx.db.ExecContext(ctx, query, w.dbCtx.formatMessageIDForDB(msg))
-	return true
+	// nolint:gosec
+	query := fmt.Sprintf("DELETE FROM outbox WHERE id IN (%s)", strings.Join(placeholders, ", "))
+	_, _ = w.dbCtx.db.ExecContext(ctx, query, ids...)
 }
 
 func insertOutboxMessage(ctx context.Context, dbCtx *DBContext, tx TxQueryer, msg *Message) error {
