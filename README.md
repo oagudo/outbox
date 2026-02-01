@@ -28,12 +28,10 @@ Lightweight library for the [transactional outbox pattern](https://microservices
 
 The library consists of two main components:
 
-1. **Writer**: Stores your business objects and corresponding messages atomically within a transaction
+1. **Writer**: Stores your business objects and corresponding messages atomically within a single transaction
 2. **Reader**: Publishes stored messages to your message broker in the background
 
 ### The Writer
-
-The Writer ensures your entity and outbox message are stored together atomically:
 
 ```go
 // Initialise Writer
@@ -43,19 +41,17 @@ writer := outbox.NewWriter(dbCtx)
 
 // --- Option 1: Library-managed transactions (recommended) ---
 //
-// Write executes user defined queries and store messages atomically in a single transaction.
-// If either fails, everything is rolled back.
+// The library handles begin/commit/rollback. If the callback returns an error, the transaction is rolled back
+//
+// Use Write function for conditional or multiple messages publishing
 err = writer.Write(ctx, func(ctx context.Context, tx outbox.TxQueryer, msgWriter outbox.MessageWriter) error {
-    // Perform business logic
     result, err := tx.ExecContext(ctx,
-        "UPDATE inventory SET quantity = quantity - $1 WHERE product_id = $2 AND quantity >= $1",
-        order.Quantity, order.ProductID)
+        "UPDATE orders SET status = 'confirmed' WHERE id = $1 AND status = 'pending'", orderID)
     if err != nil {
         return err
     }
-    rows, _ := result.RowsAffected()
-    if rows == 0 {
-        return ErrInsufficientInventory // no message emitted, transaction rolled back
+    if rows, _ := result.RowsAffected(); rows == 0 {
+        return ErrOrderNotPending // no message, rollback
     }
 
     // Create and store outbox messages
@@ -67,7 +63,8 @@ err = writer.Write(ctx, func(ctx context.Context, tx outbox.TxQueryer, msgWriter
     return msgWriter.Store(ctx, msg)
 })
 
-// For simple cases that store a single message unconditionally, use WriteOne
+// Use WriteOne function for simple cases that store a single message unconditionally
+msg := outbox.NewMessage(payload)
 err = writer.WriteOne(ctx, msg, func(ctx context.Context, tx outbox.TxQueryer) error {
     _, err := tx.ExecContext(ctx,
         "INSERT INTO entity (id, created_at) VALUES ($1, $2)",
@@ -77,8 +74,10 @@ err = writer.WriteOne(ctx, msg, func(ctx context.Context, tx outbox.TxQueryer) e
 
 // --- Option 2: User-managed transactions ---
 //
-// Intended for users who want to manage the transaction lifecycle themselves
-// and only need to persist outbox messages.
+// User handles begin/commit/rollback
+//
+// For users who want to manage the transaction lifecycle themselves
+// and only need to persist outbox messages
 unmanagedWriter := writer.Unmanaged()
 tx, _ := db.BeginTx(ctx, nil)
 defer tx.Rollback()
@@ -92,7 +91,7 @@ tx.Commit()
 <details>
 <summary><strong>🚀 Optimistic Publishing (Optional)</strong></summary>
 
-Optimistic publishing attempts to publish messages immediately after transaction commit, reducing latency while maintaining guaranteed delivery through the background reader as fallback.
+Publishes messages immediately after transaction commit for lower latency. The background reader acts as fallback if optimistic publishing fails.
 
 #### How It Works
 
@@ -115,7 +114,7 @@ writer := outbox.NewWriter(dbCtx, outbox.WithOptimisticPublisher(publisher))
 - Publishing happens asynchronously after transaction commit
 - Message consumers must be idempotent as messages could be published twice - by the optimistic publisher and by the reader (Note: consumer idempotency is a good practice regardless of optimistic publishing, though some brokers also provide deduplication features)
 - Publishing failures don't affect your transactions - they don't cause `Write()` to fail
-- Optimistic publisher is not triggered for user managed transactions - `Writer.Unmanaged()`.
+- Optimistic publisher is not triggered for user managed transactions - `Writer.Unmanaged()`
 
 </details>
 
@@ -148,7 +147,13 @@ reader := outbox.NewReader(
 reader.Start()
 defer reader.Stop(context.Background()) // Stop during application shutdown
 
-// Monitor standard processing errors (publish / update / delete / read).
+<details>
+<summary><strong>📊 Error Monitoring</strong></summary>
+
+The reader exposes channels for errors and discarded messages:
+
+```go
+// Monitor processing errors
 go func() {
     for err := range reader.Errors() {
         switch e := err.(type) {
@@ -176,7 +181,7 @@ go func() {
     }
 }()
 
-// Monitor discarded messages (hit the max-attempts threshold).
+// Monitor poison messages (exceeded max attempts)
 go func() {
     for msg := range reader.DiscardedMessages() {
         log.Printf("outbox message %s discarded after %d attempts",
@@ -187,8 +192,9 @@ go func() {
         //   • persist for manual inspection
     }
 }()
-
 ```
+
+</details>
 
 ### Database Setup
 
@@ -197,7 +203,6 @@ go func() {
 The library supports multiple relational databases. Configure the appropriate `SQLDialect` when creating the `DBContext`. Supported dialects are PostgreSQL, MySQL, MariaDB, SQLite, Oracle and SQL Server.
 
 ```go
-// Example creating a DBContext with MySQL dialect
 dbCtx := outbox.NewDBContext(db, outbox.SQLDialectMySQL)
 ```
 
@@ -324,7 +329,7 @@ Complete working examples for different databases and message brokers:
 To run an example:
 
 ```bash
-cd examples/postgres-kafka # or examples/oracle-nats or examples/mysql-rabitmq
+cd examples/postgres-kafka # or examples/oracle-nats or examples/mysql-rabbitmq
 ../../scripts/up-and-wait.sh
 go run service.go
 
@@ -366,4 +371,4 @@ dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions welcome! Bug fix PRs are always appreciated. For new features or bigger changes, consider opening an issue first so we can discuss the approach together.
