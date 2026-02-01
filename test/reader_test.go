@@ -118,6 +118,39 @@ func TestReaderRetriesFailedPublishAndRetainsMessage(t *testing.T) {
 	require.NoError(t, r.Stop(context.Background()))
 }
 
+func TestPublishErrorContainsCorrectTimesAttempted(t *testing.T) {
+	dbCtx := setupTest(t)
+
+	anyMsg := createMessageFixture()
+	writeMessage(t, anyMsg)
+
+	publishErr := errors.New("any error during publish")
+
+	r := outbox.NewReader(dbCtx, &fakePublisher{
+		onPublish: func(_ context.Context, _ *outbox.Message) error {
+			return publishErr
+		},
+	},
+		outbox.WithInterval(readerInterval),
+		outbox.WithFixedDelay(0),
+		outbox.WithMaxAttempts(3),
+	)
+	r.Start()
+
+	for expectedAttempt := int32(1); expectedAttempt <= 3; expectedAttempt++ {
+		expected := expectedAttempt // capture for closure
+		waitForErrorWithCondition(t, r, func(err error) bool {
+			e, ok := err.(*outbox.PublishError)
+			return ok &&
+				e.Message.ID == anyMsg.ID &&
+				e.Message.TimesAttempted == expected &&
+				errors.Is(e, publishErr)
+		})
+	}
+
+	require.NoError(t, r.Stop(context.Background()))
+}
+
 func TestStopTimesOutIfReaderIsGracefullyStopped(t *testing.T) {
 	dbCtx := setupTest(t)
 

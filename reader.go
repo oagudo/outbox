@@ -475,6 +475,8 @@ func (r *Reader) handleMessage(msg *Message) bool {
 
 	err := r.publishMessage(msg)
 	if err != nil {
+		msg.TimesAttempted++
+
 		r.sendError(&PublishError{Message: *msg, Err: err})
 
 		err = r.scheduleNextAttempt(msg)
@@ -491,7 +493,8 @@ func (r *Reader) scheduleNextAttempt(msg *Message) error {
 	ctx, cancel := context.WithTimeout(r.ctx, r.updateTimeout)
 	defer cancel()
 
-	delay := r.delayFunc(int(msg.TimesAttempted))
+	// TimesAttempted already reflects the current attempt, so subtract 1 to get the 0-indexed retry number
+	delay := r.delayFunc(int(msg.TimesAttempted) - 1)
 	nextScheduledAt := time.Now().UTC().Add(delay)
 
 	// nolint:gosec // Query built with placeholders ($1,$2..), not actual values
