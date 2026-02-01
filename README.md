@@ -43,7 +43,7 @@ writer := outbox.NewWriter(dbCtx)
 //
 // The library handles begin/commit/rollback. If the callback returns an error, the transaction is rolled back
 //
-// Use Write function for conditional or multiple messages publishing
+// Use Write function for conditional or multiple message publishing
 err = writer.Write(ctx, func(ctx context.Context, tx outbox.TxQueryer, msgWriter outbox.MessageWriter) error {
     result, err := tx.ExecContext(ctx,
         "UPDATE orders SET status = 'confirmed' WHERE id = $1 AND status = 'pending'", orderID)
