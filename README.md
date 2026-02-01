@@ -151,8 +151,7 @@ reader.Start()
 defer reader.Stop(context.Background()) // Stop during application shutdown
 ```
 
-<details>
-<summary><strong>📊 Error Monitoring</strong></summary>
+#### Monitoring
 
 The reader exposes channels for errors and discarded messages:
 
@@ -197,8 +196,6 @@ go func() {
     }
 }()
 ```
-
-</details>
 
 ### Database Setup
 
