@@ -18,7 +18,7 @@ func Fixed(delay time.Duration) DelayFunc {
 // Exponential returns a DelayFunc that returns an exponential delay for all attempts.
 // The delay is 2^n where n is the current attempt number.
 //
-// For example, with initialDelay of 200 miliseconds and maxDelay of 1 hour:
+// For example, with initialDelay of 200 milliseconds and maxDelay of 1 hour:
 //
 // Delay after attempt 0: 200ms
 // Delay after attempt 1: 400ms

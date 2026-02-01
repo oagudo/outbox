@@ -192,7 +192,7 @@ func WithExponentialDelay(initialDelay time.Duration, maxDelay time.Duration) Re
 // WithFixedDelay sets the delay between attempts to publish a message to be fixed.
 // The delay is the same for all attempts.
 //
-// For example, with delay of 200 miliseconds:
+// For example, with delay of 200 milliseconds:
 //
 // Delay after attempt 0: 200ms
 // Delay after attempt 1: 200ms
