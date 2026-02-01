@@ -149,15 +149,15 @@ func (w *Writer) Write(ctx context.Context, fn OutboxWorkFunc) error {
 	txCommitted = err == nil
 
 	if txCommitted && w.msgPublisher != nil {
-		asyncCtx := context.WithoutCancel(ctx) // optimistic path is async, we don't want to cancel the context
-		now := time.Now().UTC()                // freeze time for consistent scheduling decisions
-
-		// Sort by CreatedAt to match Reader ordering (ORDER BY created_at ASC)
-		slices.SortFunc(msgWriter.msgs, func(a, b *Message) int {
-			return a.CreatedAt.Compare(b.CreatedAt)
-		})
-
 		go func() {
+			asyncCtx := context.WithoutCancel(ctx) // optimistic path is async, we don't want to cancel the context
+			now := time.Now().UTC()                // freeze time for consistent scheduling decisions
+
+			// Sort by CreatedAt to match Reader ordering (ORDER BY created_at ASC)
+			slices.SortFunc(msgWriter.msgs, func(a, b *Message) int {
+				return a.CreatedAt.Compare(b.CreatedAt)
+			})
+
 			for _, msg := range msgWriter.msgs {
 				if !w.tryPublishMessage(asyncCtx, msg, now) {
 					// Stop on first error - Reader will handle remaining messages
