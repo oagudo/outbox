@@ -35,9 +35,9 @@ The library consists of two main components:
 
 Supports two transaction management models, depending on how much control you need.
 
-#### 1. Library managed transactions
+#### 1. User managed transactions
 
-The Writer handles the entire transaction lifecycle (begin, commit, rollback) for you. This is the recommended approach for most use cases, as it reduces boilerplate and avoids common transactional pitfalls.
+You control the transaction lifecycle yourself, giving full flexibility to integrate the outbox into existing transaction management patterns.
 
 ```go
 // Initialise Writer
@@ -45,6 +45,22 @@ db, _ := sql.Open("pgx", "postgres://...")
 dbCtx := outbox.NewDBContext(db, outbox.SQLDialectPostgres)
 writer := outbox.NewWriter(dbCtx)
 
+tx, _ := db.BeginTx(ctx, nil)
+defer tx.Rollback()
+_, _ = tx.ExecContext(ctx, "INSERT INTO entity (...) VALUES (...)", ...)
+
+// Get unmanaged writer and persist outbox messages with Store function
+unmanagedWriter := writer.Unmanaged()
+err = unmanagedWriter.Store(ctx, tx, msg)
+
+tx.Commit()
+```
+
+#### 2. Library managed transactions
+
+The Writer handles the entire transaction lifecycle (begin, commit, rollback) for you. This is the recommended approach for most use cases, as it reduces boilerplate and avoids common transactional pitfalls.
+
+```go
 // Use Write function for conditional or multiple message publishing.
 // If the callback returns an error the transaction is rolled back
 err = writer.Write(ctx,
@@ -76,23 +92,6 @@ err = writer.WriteOne(ctx, msg, func(ctx context.Context, tx outbox.TxQueryer) e
         entity.ID, entity.CreatedAt)
     return err
 })
-```
-
-#### 2. User managed transactions
-
-You control the transaction lifecycle yourself, giving full flexibility to integrate the outbox into existing transaction management patterns.
-
-```go
-// For users who want to manage the transaction lifecycle themselves
-// and only need to persist outbox messages
-unmanagedWriter := writer.Unmanaged()
-tx, _ := db.BeginTx(ctx, nil)
-defer tx.Rollback()
-
-err = unmanagedWriter.Store(ctx, tx, msg)
-_, _ = tx.ExecContext(ctx, "INSERT INTO entity (...) VALUES (...)", ...)
-
-tx.Commit()
 ```
 
 <details>
