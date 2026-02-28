@@ -37,7 +37,7 @@ Supports two transaction management models, depending on how much control you ne
 
 #### 1. User managed transactions
 
-You control the transaction lifecycle yourself, giving full flexibility to integrate the outbox into existing transaction management patterns.
+You control the transaction lifecycle (begin, commit, rollback), giving full flexibility to integrate the outbox into existing transaction management patterns.
 
 ```go
 // Initialise Writer
@@ -58,7 +58,7 @@ tx.Commit()
 
 #### 2. Library managed transactions
 
-The Writer handles the entire transaction lifecycle (begin, commit, rollback) for you. This is the recommended approach for most use cases, as it reduces boilerplate and avoids common transactional pitfalls.
+The Writer handles the entire transaction lifecycle for you. This is the recommended approach for most use cases, as it reduces boilerplate and avoids common transactional pitfalls.
 
 ```go
 // Use Write function for conditional or multiple message publishing.
