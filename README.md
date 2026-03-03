@@ -47,9 +47,14 @@ writer := outbox.NewWriter(dbCtx)
 
 tx, _ := db.BeginTx(ctx, nil)
 defer tx.Rollback()
+
 _, _ = tx.ExecContext(ctx, "INSERT INTO entity (...) VALUES (...)", ...)
 
-// Get unmanaged writer and persist outbox messages with Store function
+// Create message
+payload, _ := json.Marshal(entity)
+msg := outbox.NewMessage(payload)
+
+// Use unmanaged writer with existing transaction to store the message
 unmanagedWriter := writer.Unmanaged()
 err = unmanagedWriter.Store(ctx, tx, msg)
 
