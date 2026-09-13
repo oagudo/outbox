@@ -75,9 +75,11 @@ func main() {
 
 	// Kafka setup
 	kafkaWriter := kafka.NewWriter(kafka.WriterConfig{
-		Brokers:  []string{"localhost:29092"},
-		Topic:    "entity",
-		Balancer: &kafka.LeastBytes{},
+		Brokers:      []string{"localhost:29092"},
+		Topic:        "entity",
+		Balancer:     &kafka.LeastBytes{},
+		BatchTimeout: 10 * time.Millisecond,
+		BatchSize:    1,
 	})
 	defer kafkaWriter.Close()
 
