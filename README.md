@@ -7,7 +7,6 @@
 [![Software License](https://img.shields.io/badge/license-MIT-brightgreen.svg?style=flat-square)](LICENSE)
 ![GitHub Actions](https://github.com/oagudo/outbox/actions/workflows/ci.yml/badge.svg)
 [![codecov](https://codecov.io/gh/oagudo/outbox/graph/badge.svg?token=KH1GUAV4VR)](https://codecov.io/gh/oagudo/outbox)
-[![golangci-lint](https://shields.io)](https://github.com)
 [![Go Reference](https://pkg.go.dev/badge/github.com/oagudo/outbox.svg)](https://pkg.go.dev/github.com/oagudo/outbox)
 
 Lightweight library for the [transactional outbox pattern](https://microservices.io/patterns/data/transactional-outbox.html) in Go, not tied to any specific relational database or broker.
